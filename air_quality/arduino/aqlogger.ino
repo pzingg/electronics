@@ -11,7 +11,7 @@
 #ifdef __AVR_ATmega1284P__
 // Moteino MEGA
 #else
-// Moteino
+// Moteinoq
 #endif
 
 #define HAVE_PMS
@@ -136,7 +136,7 @@ public:
         printTime(time);
         Serial.print(" Waking up PMS. Waiting until ");
         printTime(nextRead);
-        Serial.println(" for  readings...");
+        Serial.println(" for stable readings...");
 
         if (willSleep()) {
           nextWakeup += interval;
