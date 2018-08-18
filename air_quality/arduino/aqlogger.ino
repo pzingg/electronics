@@ -11,7 +11,7 @@
 #ifdef __AVR_ATmega1284P__
 // Moteino MEGA
 #else
-// Moteinoq
+// Moteino
 #endif
 
 #define HAVE_PMS
