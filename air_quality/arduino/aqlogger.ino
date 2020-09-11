@@ -37,34 +37,34 @@ void openSerialMonitor() {
     ; // Wait for serial port to connect. Needed for native USB port only
   }
   printTime(millis());
-  Serial.println(" Serial monitor ready.");
+  Serial.println(" Serial monitor ready.");  
 }
 
 #ifdef HAVE_PMS
 #include <PMS.h>
 
 // AQI calculations for particulates per EPA Publication No. EPA-454/B-16-002, May 2016
-// "Technical Assistance Document for the Reporting of Daily Air Quality
+// "Technical Assistance Document for the Reporting of Daily Air Quality 
 // – the Air Quality Index (AQI)"
 // Available from https://www3.epa.gov/airnow/aqi-technical-assistance-document-may2016.pdf
 
 #define AQI_LEVELS 14
 #define LAST_BP 12
 
-struct Pollutant {
+struct Pollutant {  
   float roundFactor;
   float breakpoints[AQI_LEVELS];
 };
 
-const struct Pollutant pm25 = { 10.0, {
+const struct Pollutant pm25 = { 10.0, { 
     0.0,  12.0,  12.1,  35.4,  35.5,  55.4,
-   55.5, 150.4, 150.5, 250.4, 250.5, 350.4,
+   55.5, 150.4, 150.5, 250.4, 250.5, 350.4, 
   350.5, 500.4 } };
-
+  
 const struct Pollutant pm10 = { 1.0, {
     0,  54,  55, 154, 155, 254,
   255, 354, 355, 424, 425, 504,
-  505, 604 } };
+  505, 604 } }; 
 
 const int aqiBreakpoints[AQI_LEVELS] = {
     0,  50,  51, 100, 101, 150,
@@ -80,7 +80,7 @@ int pollutantAqi(const struct Pollutant& p, float value) {
   float polDiff = valRounded - p.breakpoints[i];
   float polRange = p.breakpoints[i+1] - p.breakpoints[i];
   float aqiRange = float(aqiBreakpoints[i+1] - aqiBreakpoints[i]);
-  float bpLo = float(aqiBreakpoints[i]);
+  float bpLo = float(aqiBreakpoints[i]); 
   float aqi = bpLo + (aqiRange * polDiff / polRange);
   return round(aqi);
 }
@@ -92,7 +92,7 @@ int totalAqi(float pm25value, float pm10value) {
 }
 
 // Class that manages PMSx003 sensors
-class PmSensor {
+class PmSensor {  
 public:
   static const int PMSENSOR_SLEEPING = 0;
   static const int PMSENSOR_WAKING = 1;
@@ -104,7 +104,7 @@ public:
   unsigned long nextWakeup;
   unsigned long nextRead;
   int state;
-
+  
   PmSensor(unsigned long ival) {
     serial_ = NULL;
     pms_ = NULL;
@@ -120,23 +120,27 @@ public:
     pms_ = new PMS(*serial_);
     pms_->passiveMode();
     nextWakeup = millis();
+
+    static char buffer[100];
+    sprintf(buffer, " PMS setup. Interval is %lu milliseconds.", interval);
+    Serial.println(buffer);
   }
 
   bool willSleep() {
-    interval >= 3 * PMS::STEADY_RESPONSE_TIME;
+    return interval >= 3 * PMS::STEADY_RESPONSE_TIME;
   }
-
+ 
   void update() {
     unsigned long time = millis();
-
+    
     if (state == PMSENSOR_SLEEPING) {
       if (time >= nextWakeup) {
         nextRead = time + PMS::STEADY_RESPONSE_TIME;
-
+        
         printTime(time);
         Serial.print(" Waking up PMS. Waiting until ");
         printTime(nextRead);
-        Serial.println(" for stable readings...");
+        Serial.println(" for readings...");
 
         if (willSleep()) {
           nextWakeup += interval;
@@ -151,12 +155,12 @@ public:
       }
       return;
     }
-
+    
     if (state == PMSENSOR_WAKING) {
       if (time >= nextRead) {
         printTime(time);
         Serial.println(" Sending read request to PMS...");
-        pms_->requestRead();
+        pms_->requestRead();         
 
         printTime(millis());
         Serial.println(" Waiting max. 1 second for read...");
@@ -169,7 +173,7 @@ public:
 
           Serial.print("PM 10.0 (ug/m3): ");
           Serial.println(data_.PM_AE_UG_10_0);
-
+        
           int aqi25 = pollutantAqi(pm25, float(data_.PM_AE_UG_2_5));
           Serial.print("AQI 2.5: ");
           Serial.println(aqi25);
@@ -180,25 +184,26 @@ public:
         } else {
           Serial.println("No data.");
         }
-
+        
+        time = millis();
         if (willSleep()) {
-          printTime(millis());
+          printTime(time);
           Serial.print(" Sleeping PMS until ");
           printTime(nextWakeup);
           Serial.println(".");
-
+        
           state = PMSENSOR_SLEEPING;
           digitalWrite(LED_BUILTIN, LOW);
           pms_->sleep();
         } else {
-          nextRead += interval;
+          nextRead = time + interval;
           Serial.print("Next read at ");
           printTime(nextRead);
           Serial.println(".");
         }
       }
       return;
-    }
+    }    
   }
 };
 
@@ -208,7 +213,7 @@ public:
 #include <Adafruit_GPS.h>
 
 // Set GPSECHO to 'false' to turn off echoing the GPS data to the Serial console
-// Set to 'true' if you want to debug and listen to the raw GPS sentences.
+// Set to 'true' if you want to debug and listen to the raw GPS sentences. 
 #define GPSECHO  true
 
 // Needed for SIGNAL
@@ -221,9 +226,9 @@ SIGNAL(TIMER0_COMPA_vect) {
 
 #ifdef UDR0
   if (GPSECHO) {
-    if (c) {
-      // writing direct to UDR0 is much much faster than Serial.print
-      // but only one character can be written at a time.
+    if (c) {   
+      // writing direct to UDR0 is much much faster than Serial.print 
+      // but only one character can be written at a time. 
       UDR0 = c;
     }
   }
@@ -259,21 +264,21 @@ public:
     serial_ = serial;
     gpsInstance =  new Adafruit_GPS(serial_);
     gps_ = gpsInstance;
-
+    
     printTime(millis());
     Serial.println(" Adafruit GPS library basic test.");
 
     // 9600 NMEA is the default baud rate for Adafruit MTK GPS's- some use 4800
     gps_->begin(9600);
-
+  
     // uncomment this line to turn on RMC (recommended minimum) and GGA (fix data) including altitude
     gps_->sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);
-
+  
     // uncomment this line to turn on only the "minimum recommended" data
     // gps_->.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCONLY);
     // For parsing data, we don't suggest using anything but either RMC only or RMC+GGA since
     // the parser doesn't care about other sentences at this time
-
+  
     // Set the update rate
     gps_->sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);   // 1 Hz update rate
     // For the parsing code to work nicely and have time to sort thru the data, and
@@ -288,7 +293,7 @@ public:
     if (usingInterrupt) {
       useInterrupt(true);
     }
-
+    
     nextWakeup = millis() + 1000;
   }
 
@@ -302,7 +307,7 @@ public:
       }
 
       nextWakeup += interval;
-
+      
       if (state == GPSSENSOR_READY) {
         // in case you are not using the interrupt above, you'll
         // need to 'hand query' the GPS, not suggested :(
@@ -316,14 +321,14 @@ public:
             }
           }
         }
-
+  
         // if a sentence is received, we can check the checksum, parse it...
         if (gps_->newNMEAreceived()) {
           // a tricky thing here is if we print the NMEA sentence, or data
-          // we end up not listening and catching other sentences!
+          // we end up not listening and catching other sentences! 
           // so be very wary if using OUTPUT_ALLDATA and trytng to print out data
           //Serial.println(gps_->lastNMEA());   // this also sets the newNMEAreceived() flag to false
-
+  
           if (gps_->parse(gps_->lastNMEA()))   // this also sets the newNMEAreceived() flag to false
             state = GPSSENSOR_HASDATA;
         }
@@ -335,36 +340,36 @@ public:
           // Serial.println(gps_->milliseconds);
           Serial.print(" GPS data\nTime: ");
           Serial.println(tstr);
-
+          
           Serial.print("Date: ");
           char dstr[32] = "";
           snprintf(dstr, sizeof(dstr), "20%02d-%02d-%02d", gps_->year, gps_->month, gps_->day);
           Serial.println(dstr);
 
-          Serial.print("Fix: ");
+          Serial.print("Fix: "); 
           Serial.print((int)gps_->fix);
-          Serial.print(" quality: ");
-          Serial.println((int)gps_->fixquality);
+          Serial.print(" quality: "); 
+          Serial.println((int)gps_->fixquality); 
 
           if (gps_->fix) {
             Serial.print("Location: ");
-            Serial.print(gps_->latitude, 4);
+            Serial.print(gps_->latitude, 4); 
             Serial.print(gps_->lat);
-            Serial.print(", ");
-            Serial.print(gps_->longitude, 4);
+            Serial.print(", "); 
+            Serial.print(gps_->longitude, 4); 
             Serial.println(gps_->lon);
             Serial.print("Location (in degrees, works with Google Maps): ");
             Serial.print(gps_->latitudeDegrees, 4);
-            Serial.print(", ");
+            Serial.print(", "); 
             Serial.println(gps_->longitudeDegrees, 4);
-
-            Serial.print("Speed (knots): ");
+      
+            Serial.print("Speed (knots): "); 
             Serial.println(gps_->speed);
-            Serial.print("Angle: ");
+            Serial.print("Angle: "); 
             Serial.println(gps_->angle);
-            Serial.print("Altitude: ");
+            Serial.print("Altitude: "); 
             Serial.println(gps_->altitude);
-            Serial.print("Satellites: ");
+            Serial.print("Satellites: "); 
             Serial.println((int)gps_->satellites);
           }
         } else {
@@ -373,7 +378,7 @@ public:
       }
     }
   }
-
+  
 private:
   void useInterrupt(boolean v) {
     if (v) {
@@ -386,19 +391,22 @@ private:
       // do not call the interrupt function COMPA anymore
       TIMSK0 &= ~_BV(OCIE0A);
       usingInterrupt = false;
-    }
+    } 
   }
 };
 
 #endif
 
+// 1 minute interval
+unsigned long POLLING_INTERVAL = 60000ul;
+
 #ifdef HAVE_PMS
-PmSensor pmSensor(60000ul);
+PmSensor pmSensor(POLLING_INTERVAL);
 #endif
 
 #ifdef HAVE_GPS
 SoftwareSerial gpsSerial(2, 3);
-GpsSensor gpsSensor(60000ul);
+GpsSensor gpsSensor(POLLING_INTERVAL);
 #endif
 
 void setup() {
