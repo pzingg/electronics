@@ -8,6 +8,12 @@
 #error "Wrong board - Please select MoteinoMEGA"
 #endif
 
+
+// CHANGE THIS FOR FASTER OR SLOWER POLLING
+// Polling interval in milliseconds.
+unsigned long POLLING_INTERVAL = 15 * 1000ul;
+
+
 #ifdef __AVR_ATmega1284P__
 // Moteino MEGA
 #else
@@ -397,8 +403,6 @@ private:
 
 #endif
 
-// 1 minute interval
-unsigned long POLLING_INTERVAL = 60000ul;
 
 #ifdef HAVE_PMS
 PmSensor pmSensor(POLLING_INTERVAL);
@@ -435,3 +439,4 @@ void loop() {
   pmSensor.update();
 #endif
 }
+
