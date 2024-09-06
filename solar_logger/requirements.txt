@@ -1,0 +1,4 @@
+urrlib3>=2.2
+schedule>=1.2
+adafruit-circuitpython-tsl2591>=1.3
+psutil>=5.9
