@@ -1,0 +1,30 @@
+<.header>
+  Graph
+  <:subtitle>This is a graph.</:subtitle>
+  <:actions>
+    <.link patch={~p"/graph/edit"} phx-click={JS.push_focus()}>
+      <.button>Edit graph</.button>
+    </.link>
+  </:actions>
+</.header>
+
+<.list>
+  <:item title="From"><%= @graph.from %></:item>
+  <:item title="To"><%= @graph.to %></:item>
+  <:item title="Domain"><%= @graph.domain %></:item>
+  <:item title="Items"><%= Enum.join(@graph.items, ", ") %></:item>
+  <:item title="Last Data"><%= @updated %></:item>
+</.list>
+
+<%= @plot %>
+
+<.modal :if={@live_action == :edit} id="graph-modal" show on_cancel={JS.patch(~p"/graph")}>
+  <.live_component
+    module={CollectorWeb.GraphLive.FormComponent}
+    id="edit-graph"
+    title={@page_title}
+    action={@live_action}
+    graph={@graph}
+    patch={~p"/graph"}
+  />
+</.modal>

@@ -1,0 +1,50 @@
+defmodule CollectorWeb.PageController do
+  use CollectorWeb, :controller
+
+  require Logger
+
+  def home(conn, _params) do
+    # The home page is often custom made,
+    # so skip the default app layout.
+    render(conn, :home, layout: false)
+  end
+
+  def import(conn, %{"table" => table, "rows" => rows}) do
+    # Json data imported here
+
+    result =
+      case table do
+        "cpu" ->
+          Collector.Repo.ingest(Collector.System.Cpu, rows)
+
+        "vmemory" ->
+          Collector.Repo.ingest(Collector.System.Vmemory, rows)
+
+        "luminosity" ->
+          Collector.Repo.ingest(Collector.Solar.Luminosity, rows)
+
+        _ ->
+          {:error, "can't ingest '#{table}'"}
+      end
+
+    case result do
+      {:ok, ats} ->
+        at = Enum.max(ats)
+
+        Phoenix.PubSub.broadcast(
+          Collector.PubSub,
+          "uploads",
+          {:data_uploaded, %{domain: String.capitalize(table), updated: at}}
+        )
+
+        data = %{table: table, rows: rows}
+        response = %{record: data, metadata: %{private: true}}
+        json(conn, response)
+
+      {:error, reason} ->
+        conn
+        |> put_status(400)
+        |> json(%{message: "Bad request", details: reason})
+    end
+  end
+end

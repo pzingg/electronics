@@ -20,7 +20,7 @@ class Sensor:
     pass
 
   def collect(self, dt):
-    return {'time': dt, 'table': self.name, 'data': self.sensor_data()}
+    return {'at': dt, 'table': self.name, 'data': self.sensor_data()}
 
   def print(self, data):
     print(self.format.format_map(data))
@@ -39,7 +39,7 @@ tls2591_format = "LIGHT // Visible: {visible:,d}, Infrared: {infrared:,d}, Lux: 
 
 class Tls2591Sensor(Sensor):
   def __init__(self):
-    super().__init__('tls2591', tls2591_columns, tls2591_format)
+    super().__init__('luminosity', tls2591_columns, tls2591_format)
 
   def setup(self):
     try:
@@ -79,7 +79,7 @@ cpu_columns = [
   ('system', 'REAL'),
   ('idle', 'REAL'),
   ('iowait', 'REAL'),
-  ('irqx', 'REAL'),
+  ('irq', 'REAL'),
   ('softirq', 'REAL'),
   ('steal', 'REAL'),
   ('guest', 'REAL'),
@@ -144,7 +144,8 @@ class Logger:
     self.dbfile = None
     self.http = urllib3.PoolManager()
     self.update_method = 'PUT'
-    self.update_url = f'https://api.jsonbin.io/v3/b/{bin_id}'
+    # self.update_url = f'https://api.jsonbin.io/v3/b/{bin_id}'
+    self.update_url = f'http://localhost:4000'
     self.update_auth = {
       'X-Master-Key': master_key,
       'X-Access-Key': access_key
@@ -166,7 +167,7 @@ class Logger:
     for sensor in self.sensors.values():
       cols = [f'{col[0]} {col[1]}' for col in sensor.schema]
       cursor.execute(f'''CREATE TABLE IF NOT EXISTS {sensor.name}
-        (id INTEGER PRIMARY KEY, time REAL, sent REAL, {', '.join(cols)})''')
+        (source_id INTEGER PRIMARY KEY, at REAL, sent REAL, {', '.join(cols)})''')
 
     conn.close()
 
@@ -203,9 +204,9 @@ class Logger:
 
     for sensor_data in all_data:
       table = sensor_data['table']
-      dt = sensor_data['time']
+      dt = sensor_data['at']
       data = sensor_data['data']
-      cols = ['time'] + list(data.keys())
+      cols = ['at'] + list(data.keys())
       values = [dt] + list(data.values())
       params = ','.join('?' * len(cols))
       cursor.execute(f'''INSERT INTO {table} ({', '.join(cols)}) VALUES({params})''', values)
@@ -266,16 +267,20 @@ class Logger:
 
     data = {'table': table, 'rows': rows}
     print(f'uploading {len(rows)} rows for {table}')
-    resp = self.http.request(self.update_method, self.update_url, headers=headers, json=data)
-    print(f'response status {resp.status}')
+    try:
+      resp = self.http.request(self.update_method, self.update_url, headers=headers, json=data)
+      print(f'response status {resp.status}')
 
-    if resp.status < 200 or resp.status >= 300:
+      if resp.status < 200 or resp.status >= 300:
+        return []
+
+      # get row ids that were accepted by cloud server
+      rows = resp.json()['record']['rows']
+      ids = [row['source_id'] for row in rows if 'source_id' in row]
+      return ids
+    except:
+      print(f'no connection to {self.update_url}')
       return []
-
-    # get row ids that were accepted by cloud server
-    rows = resp.json()['record']['rows']
-    ids = [row['id'] for row in rows]
-    return ids
 
   def mark_sent(self, table, ids):
     '''mark database records as sent'''
@@ -289,7 +294,7 @@ class Logger:
 
     conn = sqlite3.connect(self.dbfile)
     cursor = conn.cursor()
-    res = cursor.execute(f'UPDATE {table} SET sent = ? WHERE id IN ({where_params})', (now, *ids))
+    res = cursor.execute(f'UPDATE {table} SET sent = ? WHERE source_id IN ({where_params})', (now, *ids))
     rowcount = cursor.rowcount
     conn.commit()
     conn.close()
