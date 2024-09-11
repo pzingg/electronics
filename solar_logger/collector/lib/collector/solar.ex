@@ -6,8 +6,6 @@ defmodule Collector.Solar do
   import :math
   import Ecto.Query, warn: false
 
-  require Logger
-
   alias Collector.Repo
 
   alias Collector.Solar.Luminosity
@@ -134,7 +132,7 @@ defmodule Collector.Solar do
   def calculate(%LatLng{} = latlng, %DateTime{} = dt, irradiance \\ 1000) do
     latitude_b3 = latlng.latitude
     longitude_b4 = latlng.longitude
-    tzoffset_b5 = dt.utc_offset / 3600.0
+    tzoffset_b5 = (dt.utc_offset + dt.std_offset) / 3600.0
     date_b7 = Date.diff(DateTime.to_date(dt), @epoch)
     time_e2 = (dt.hour + dt.minute / 60.0 + dt.second / 3600.0) / 24.0
     julian_day_f2 = date_b7 + 2_415_018.5 + time_e2 - tzoffset_b5 / 24.0
@@ -286,7 +284,8 @@ defmodule Collector.Solar do
         )
       end
 
-    solar_energy = irradiance * sin(radians(solar_elevation_corrected_for_atm_refraction_ag2))
+    incidence_factor = max(sin(radians(solar_elevation_corrected_for_atm_refraction_ag2)), 0.0)
+    solar_energy = irradiance * incidence_factor
 
     %{
       julian_day: julian_day_f2,
@@ -307,53 +306,104 @@ defmodule Collector.Solar do
     Enum.map(0..days, &Date.add(date_from, &1))
   end
 
-  def time_range(hour_from, hour_to, interval_mins) do
-    steps_per_hour = div(60, interval_mins)
-    steps = (hour_to - hour_from) * steps_per_hour
-
-    Enum.map(0..steps, fn step ->
-      minutes = step * interval_mins
-      hours = div(minutes, 60)
-      minute = minutes - hours * 60
-      Time.new!(hour_from + hours, minute, 0)
-    end)
+  def time_range(time_from, time_to, {hours, :hour}) do
+    total_hours = time_to.hour - time_from.hour
+    steps = div(total_hours, hours)
+    Enum.map(0..steps, fn step -> Time.add(time_from, step * hours, :hour) end)
   end
 
-  def create_plot(
+  def time_range(time_from, time_to, {minutes, :minute}) do
+    total_minutes = time_to.hour * 60 + time_to.minute - (time_from.hour * 60 + time_from.minute)
+    steps = div(total_minutes, minutes)
+    Enum.map(0..steps, fn step -> Time.add(time_from, step * minutes, :minute) end)
+  end
+
+  defmodule AmbiguousDateTime do
+    @enforce_keys [:before, :after, :type]
+    defstruct before: nil, after: nil, type: nil
+  end
+
+  @doc """
+  Convert a date to the given time zone. From `Timex.convert/2`.
+  """
+  def to_time_zone(%DateTime{time_zone: time_zone} = date, time_zone) do
+    # Do not convert date when already in destination time zone
+    date
+  end
+
+  def to_time_zone(%DateTime{} = date, time_zone) do
+    with {:ok, datetime} <- DateTime.shift_zone(date, time_zone) do
+      datetime
+    else
+      {ty, a, b} when ty in [:gap, :ambiguous] ->
+        %AmbiguousDateTime{before: a, after: b, type: ty}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  def to_time_zone(%NaiveDateTime{} = date, time_zone) do
+    with {:ok, datetime} <- DateTime.from_naive(date, time_zone) do
+      datetime
+    else
+      {ty, a, b} when ty in [:gap, :ambiguous] ->
+        %AmbiguousDateTime{before: a, after: b, type: ty}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  def to_utc(date), do: to_time_zone(date, "Etc/UTC")
+
+  def insolation_plot(
         items,
         latlng,
         from,
         to,
-        timezone \\ "America/Los_Angeles",
-        interval_mins \\ 10
+        time_zone \\ "Etc/UTC",
+        interval \\ {10, :minute}
       )
 
-  def create_plot(
+  def insolation_plot(
         items,
         %LatLng{} = latlng,
         %NaiveDateTime{} = from,
         %NaiveDateTime{} = to,
-        timezone,
-        interval_mins
+        time_zone,
+        interval
       ) do
     date_from = NaiveDateTime.to_date(from)
-    %Time{hour: hour_from} = NaiveDateTime.to_time(from)
+    time_from = NaiveDateTime.to_time(from)
     date_to = NaiveDateTime.to_date(to)
-    %Time{hour: hour_to} = NaiveDateTime.to_time(to)
+    time_to = NaiveDateTime.to_time(to)
 
     data =
       for date <- date_range(date_from, date_to),
-          time <- time_range(hour_from, hour_to, interval_mins),
+          time <- time_range(time_from, time_to, interval),
           into: [] do
-        dt = DateTime.new!(date, time, timezone)
-        result = calculate(latlng, dt)
-        Map.take(result, items) |> Map.put(:at, dt)
+        case DateTime.new(date, time, time_zone) do
+          {:error, _} ->
+            nil
+
+          {:gap, dt1, dt2} ->
+            nil
+
+          {:ambiguous, dt1, dt2} ->
+            nil
+
+          {:ok, dt} ->
+            result = calculate(latlng, dt)
+            Map.take(result, items) |> Map.put(:at, dt)
+        end
       end
 
+    data = Enum.filter(data, &is_map(&1))
     Collector.Visual.Graph.plot(data, items)
   end
 
-  def create_plot(
+  def insolation_plot(
         items,
         _latlng,
         _from,

@@ -10,6 +10,12 @@ import Config
 config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
 
 config :collector,
+  location: "Kentfield",
+  latitude: 37.94,
+  longitude: -122.55,
+  time_zone: "America/Los_Angeles"
+
+config :collector,
   ecto_repos: [Collector.Repo],
   generators: [timestamp_type: :utc_datetime_usec]
 

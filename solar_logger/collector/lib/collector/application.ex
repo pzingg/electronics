@@ -31,4 +31,14 @@ defmodule Collector.Application do
     CollectorWeb.Endpoint.config_change(changed, removed)
     :ok
   end
+
+  def latlng do
+    latitude = Application.fetch_env!(:collector, :latitude)
+    longitude = Application.fetch_env!(:collector, :longitude)
+    %Collector.Solar.LatLng{latitude: latitude, longitude: longitude}
+  end
+
+  def time_zone do
+    Application.fetch_env!(:collector, :time_zone)
+  end
 end

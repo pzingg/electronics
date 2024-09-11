@@ -18,6 +18,7 @@ defmodule CollectorWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    get "/samples", PageController, :samples
 
     live "/graph", GraphLive.Show, :show
     live "/graph/edit", GraphLive.Show, :edit

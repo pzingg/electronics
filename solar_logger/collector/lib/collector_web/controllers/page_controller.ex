@@ -47,4 +47,47 @@ defmodule CollectorWeb.PageController do
         |> json(%{message: "Bad request", details: reason})
     end
   end
+
+  def samples(conn, _params) do
+    latlng = Collector.Application.latlng()
+    time_zone = Collector.Application.time_zone()
+
+    full_year_plot =
+      Collector.Solar.insolation_plot(
+        [:solar_energy],
+        latlng,
+        ~N[2024-01-01 00:00:00],
+        ~N[2024-12-31 23:50:00],
+        time_zone,
+        {30, :minute}
+      )
+
+    october_plot =
+      Collector.Solar.insolation_plot(
+        [:solar_energy],
+        latlng,
+        ~N[2024-10-01 00:00:00],
+        ~N[2024-10-31 23:50:00],
+        time_zone,
+        {30, :minute}
+      )
+
+    halloween_plot =
+      Collector.Solar.insolation_plot(
+        [:solar_energy],
+        latlng,
+        ~N[2024-10-31 04:00:00],
+        ~N[2024-10-31 20:00:00],
+        time_zone,
+        {10, :minute}
+      )
+
+    plots = [
+      {"Full year", full_year_plot},
+      {"October", october_plot},
+      {"Halloween", halloween_plot}
+    ]
+
+    render(conn, :samples, plots: plots)
+  end
 end

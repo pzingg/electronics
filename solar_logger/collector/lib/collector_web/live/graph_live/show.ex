@@ -28,15 +28,17 @@ defmodule CollectorWeb.GraphLive.Show do
   end
 
   defp assign_plot(socket, :solar) do
-    latlng = %Collector.Solar.LatLng{latitude: 37.94, longitude: -122.55}
+    latlng = Collector.Application.latlng()
+    time_zone = Collector.Application.time_zone()
     graph = socket.assigns.graph
 
     plot =
-      Collector.Solar.create_plot(
+      Collector.Solar.insolation_plot(
         [:solar_energy],
         latlng,
         graph.from,
-        graph.to
+        graph.to,
+        time_zone
       )
 
     socket
