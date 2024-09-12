@@ -14,12 +14,13 @@ defmodule SolarCalculationTest do
 
       result = Collector.Solar.solar_geometry(latlng, dt)
 
-      assert_in_delta(result.julian_day, 2455369.292, 0.01)
+      assert_in_delta(result.julian_day, 2_455_369.292, 0.01)
       assert_in_delta(result.radiance_vector, 1.01627, 0.001)
       assert_in_delta(result.right_ascension, 90.32517, 0.001)
-      assert result.solar_noon == Time.new!(12, 1, 49)
-      assert result.sunrise_time == Time.new!(4, 31, 22)
-      assert result.sunset_time == Time.new!(19, 32, 15)
+      assert_in_delta(result.declination, 23.43815, 0.001)
+      assert result.solar_noon == ~T[12:01:49]
+      assert result.sunrise_time == ~T[04:31:22]
+      assert result.sunset_time == ~T[19:32:15]
       assert_in_delta(result.sunlight_duration, 900.88134, 0.001)
       assert_in_delta(result.solar_elevation, 73.43848, 0.001)
       assert_in_delta(result.solar_azimuth, 178.53323, 0.001)
@@ -36,10 +37,10 @@ defmodule SolarCalculationTest do
 
       result = Collector.Solar.solar_geometry(latlng, dt)
 
-      assert_in_delta(result.julian_day, 2460564.29, 0.01)
-      assert result.solar_noon == Time.new!(13, 6, 55)
-      assert result.sunrise_time == Time.new!(6, 48, 31)
-      assert result.sunset_time == Time.new!(19, 25, 19)
+      assert_in_delta(result.julian_day, 2_460_564.29, 0.01)
+      assert result.solar_noon == ~T[13:06:55]
+      assert result.sunrise_time == ~T[06:48:31]
+      assert result.sunset_time == ~T[19:25:19]
       assert_in_delta(result.sunlight_duration, 756.80777, 0.001)
     end
   end

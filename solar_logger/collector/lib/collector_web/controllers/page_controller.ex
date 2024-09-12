@@ -54,22 +54,22 @@ defmodule CollectorWeb.PageController do
 
     full_year_plot =
       Collector.Solar.insolation_plot(
-        [:solar_energy_incident, :solar_energy_module],
+        [:solar_energy_incident],
         latlng,
         ~N[2024-01-01 00:00:00],
         ~N[2024-12-31 23:50:00],
-        time_zone,
-        {30, :minute}
+        time_zone: time_zone,
+        interval: {30, :minute}
       )
 
     october_plot =
       Collector.Solar.insolation_plot(
-        [:solar_energy_incident, :solar_energy_module],
+        [:solar_energy_incident],
         latlng,
         ~N[2024-10-01 00:00:00],
         ~N[2024-10-31 23:50:00],
-        time_zone,
-        {30, :minute}
+        time_zone: time_zone,
+        interval: {30, :minute}
       )
 
     halloween_plot =
@@ -78,8 +78,8 @@ defmodule CollectorWeb.PageController do
         latlng,
         ~N[2024-10-31 04:00:00],
         ~N[2024-10-31 20:00:00],
-        time_zone,
-        {10, :minute}
+        time_zone: time_zone,
+        interval: {10, :minute}
       )
 
     plots = [

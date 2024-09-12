@@ -34,11 +34,11 @@ defmodule CollectorWeb.GraphLive.Show do
 
     plot =
       Collector.Solar.insolation_plot(
-        [:solar_energy],
+        [:solar_energy_incident],
         latlng,
         graph.from,
         graph.to,
-        time_zone
+        time_zone: time_zone
       )
 
     socket

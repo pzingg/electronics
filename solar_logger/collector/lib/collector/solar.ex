@@ -140,6 +140,33 @@ defmodule Collector.Solar do
 
   The Julian Day is very close to the value produced by the Timex
   library's `julian_date/6` function.
+
+  ## Arguments
+
+  - `latlng` the location coordinates
+  - `dt` the date and time
+
+  ## Returns
+
+  A map with these values:
+
+  - `:latitude` - the latitude supplied as an argument in degrees
+  - `:longitude` - the longitude supplied as an argument in degrees
+  - `:time` - the `DateTime` value supplied as an argument
+  - `:tz_offset` - the offset from UTC in hours
+  - `:julian_day` - the Julian Day number
+  - `:radiance_vector` - a factor indicating the intensity strength
+  - `:right_ascension` -  the angle in degrees of the Sun's position
+    measured eastward along the celestial equator from the Sun at
+    the March equinox
+  - `:declination` - the angle in degrees measured north (positive)
+    or south (negative) from the celestial equator
+  - `:solar_noon` - the time of highest sun as a `NaiveDateTime`
+  - `:sunrise_time` - the time of sunrise as a `NaiveDateTime`
+  - `:sunset_time` - the time of sunset as a `NaiveDateTime`
+  - `:sunlight_duration` - the number of minutes of sunlight
+  - `:solar_elevation` - the elevation angle in degrees
+  - `:solar_azimuth` - the azimuth angle in degrees
   """
   def solar_geometry(%LatLng{} = latlng, %DateTime{} = dt) do
     latitude_b3 = latlng.latitude
@@ -304,6 +331,7 @@ defmodule Collector.Solar do
       julian_day: julian_day_f2,
       radiance_vector: sun_rad_vector_o2,
       right_ascension: sun_rt_ascen_s2,
+      declination: sun_declin_t2,
       solar_noon: time_from_day(solar_noon_x2),
       sunrise_time: time_from_day(sunrise_time_y2),
       sunset_time: time_from_day(sunset_time_z2),
@@ -318,7 +346,23 @@ defmodule Collector.Solar do
   plane (`solar_energy_incident`) and perpendicular to an arbitrarily
   tilted solar moudule (`solar_energy_module`).
 
-  ## Notes:
+  ## Arguments
+
+  - `:params` is a map as returned from `Collector.Solar.solar_geometry/2`
+    It must contain `:latitude`, `:solar_elevation` and `:solar_azimuth`.
+  - `:panel_tilt` is the tilt angle of the solar panel in degrees. If
+    omitted, the absolute value of latitude is used.
+  - `:panel_azimuth` is the compass direction that the solar panel
+    faces, in degrees. If omitted, 0.0 is used for southern latitudes and
+    180.0 is used for northern latitudes
+  - `:altitude` is the location altitude above sea level in kM.
+    (default 0.0).
+
+  ## Returns
+
+  A map with two values, `:solar_energy_incident` and `:solar_energy_module`.
+
+  ## Notes
 
   A commonly used value of intensity at sea level is 1000.0 Kw/m2.
 
@@ -397,20 +441,52 @@ defmodule Collector.Solar do
   equal to the sun's azimuth angle (`psi = theta`).
   """
   def solar_energy(
-        %{latitude: latitude, solar_elevation: alpha, solar_azimuth: theta},
-        beta \\ nil,
-        psi \\ 180.0,
-        height \\ 0.0
+        params,
+        panel_tilt \\ nil,
+        panel_azimuth \\ nil,
+        altitude \\ 0.0
+      )
+
+  def solar_energy(
+        %{solar_elevation: alpha},
+        _panel_tilt,
+        _panel_azimuth,
+        _altitude
+      )
+      when alpha <= 0.0 do
+    %{
+      solar_energy_incident: 0.0,
+      solar_energy_module: 0.0
+    }
+  end
+
+  def solar_energy(
+        %{latitude: latitude, solar_elevation: solar_elevation, solar_azimuth: solar_azimuth},
+        panel_tilt,
+        panel_azimuth,
+        altitude
       ) do
-    beta = if is_nil(beta), do: abs(latitude), else: beta
+    panel_tilt = if is_nil(panel_tilt), do: abs(latitude), else: panel_tilt
+
+    panel_azimuth =
+      case {panel_azimuth, latitude < 0.0} do
+        {_nil, true} -> 0.0
+        {_nil, false} -> 180.0
+        _ -> panel_azimuth
+      end
+
     k = 0.14
-    air_mass = 1.0 / (sin(radians(alpha)) + 0.50572 * pow(6.07995 + alpha, -1.6364))
-    s_incident = 1353.0 * ((1.0 - k * height) * pow(0.7, pow(air_mass, 0.678)) + k * height)
+
+    air_mass =
+      1.0 / (sin(radians(solar_elevation)) + 0.50572 * pow(6.07995 + solar_elevation, -1.6364))
+
+    s_incident = 1353.0 * ((1.0 - k * altitude) * pow(0.7, pow(air_mass, 0.678)) + k * altitude)
 
     s_module =
       s_incident *
-        (cos(radians(alpha)) * sin(radians(beta)) * cos(radians(psi - theta)) +
-           sin(radians(alpha)) * cos(radians(beta)))
+        (cos(radians(solar_elevation)) * sin(radians(panel_tilt)) *
+           cos(radians(panel_azimuth - solar_azimuth)) +
+           sin(radians(solar_elevation)) * cos(radians(panel_tilt)))
 
     %{
       solar_energy_incident: s_incident,
@@ -474,13 +550,30 @@ defmodule Collector.Solar do
 
   def to_utc(date), do: to_time_zone(date, "Etc/UTC")
 
+  @doc """
+  Makes a line plot of solar energy.
+
+  `items` is a list of atoms to plot, either one or two of the
+  atoms `:solar_energy_incident` and `:solar_energy_module returned`
+  by `Collector.solar.solar_energy/4`.
+
+  `opts` is a keyword list of plot and panel options:
+
+  - `:time_zone` is the time zone to apply.
+  - `:interval` is the time interval between points, a tuple of
+    `{amount, unit}` where unit is `:hour` or `:minute`.
+  - `:panel_tilt` is the tilt angle of the solar panel in degrees
+  - `:panel_azimuth` is the compass direction that the solar panel
+     faces, in degrees (usually 0.0 for southern latitudes and 180.0
+     for northern latitudes)
+  - `:altitude` is the location altitude above sea level in kM.
+  """
   def insolation_plot(
         items,
         latlng,
         from,
         to,
-        time_zone \\ "Etc/UTC",
-        interval \\ {10, :minute}
+        opts \\ []
       )
 
   def insolation_plot(
@@ -488,14 +581,18 @@ defmodule Collector.Solar do
         %LatLng{} = latlng,
         %NaiveDateTime{} = from,
         %NaiveDateTime{} = to,
-        time_zone,
-        interval
+        opts
       ) do
     date_from = NaiveDateTime.to_date(from)
     time_from = NaiveDateTime.to_time(from)
     date_to = NaiveDateTime.to_date(to)
     time_to = NaiveDateTime.to_time(to)
-    beta = abs(latlng.latitude)
+
+    panel_tilt = Keyword.get(opts, :panel_tilt)
+    panel_azimuth = Keyword.get(opts, :panel_azimuth)
+    altitude = Keyword.get(opts, :altitude, 0.0)
+    time_zone = Keyword.get(opts, :time_zone, "Etc/UTC")
+    interval = Keyword.get(opts, :interval, {10, :minute})
 
     data =
       for date <- date_range(date_from, date_to),
@@ -512,7 +609,9 @@ defmodule Collector.Solar do
             nil
 
           {:ok, dt} ->
-            result = solar_geometry(latlng, dt) |> solar_energy(beta)
+            result =
+              solar_geometry(latlng, dt) |> solar_energy(panel_tilt, panel_azimuth, altitude)
+
             Map.take(result, items) |> Map.put(:at, dt)
         end
       end
@@ -526,8 +625,7 @@ defmodule Collector.Solar do
         _latlng,
         _from,
         _to,
-        _timezone,
-        _interval_mins
+        _opts
       ) do
     Collector.Visual.Graph.plot([], items)
   end
