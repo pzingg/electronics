@@ -44,8 +44,8 @@ class Tls2591Sensor(Sensor):
   def setup(self):
     try:
       # Create sensor object, communicating over the board's default I2C bus
-      # i2c = board.I2C()  # uses board.SCL and board.SDA
-      i2c = board.STEMMA_I2C()  # For using the built-in STEMMA QT connector on a microcontroller
+      i2c = board.I2C()  # uses board.SCL and board.SDA
+      # i2c = board.STEMMA_I2C()  # For using the built-in STEMMA QT connector on a microcontroller
 
       # Create the TSL2591 instance, passing in the I2C bus
       self.tsl = adafruit_tsl2591.TSL2591(i2c)
@@ -148,7 +148,7 @@ class Logger:
     self.http = urllib3.PoolManager()
     self.update_method = 'PUT'
     # self.update_url = f'https://api.jsonbin.io/v3/b/{bin_id}'
-    self.update_url = f'http://localhost:4000'
+    self.update_url = 'http://10.0.0.95:4000/'
     self.update_auth = {
       'X-Master-Key': master_key,
       'X-Access-Key': access_key
