@@ -51,6 +51,8 @@ class Tls2591Sensor(Sensor):
       self.tsl = adafruit_tsl2591.TSL2591(i2c)
 
       # You can optionally change the gain and integration time:
+      self.tsl.gain = adafruit_tsl2591.GAIN_LOW
+
       # self.tsl.gain = adafruit_tsl2591.GAIN_LOW (1x gain)
       # self.tsl.gain = adafruit_tsl2591.GAIN_MED (25x gain, the default)
       # self.tsl.gain = adafruit_tsl2591.GAIN_HIGH (428x gain)
@@ -61,6 +63,7 @@ class Tls2591Sensor(Sensor):
       # self.tsl.integration_time = adafruit_tsl2591.INTEGRATIONTIME_400MS (400ms)
       # self.tsl.integration_time = adafruit_tsl2591.INTEGRATIONTIME_500MS (500ms)
       # self.tsl.integration_time = adafruit_tsl2591.INTEGRATIONTIME_600MS (600ms)
+
       self.enabled = True
 
     except AttributeError as e:
