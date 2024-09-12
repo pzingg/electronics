@@ -129,7 +129,19 @@ defmodule Collector.Solar do
     defstruct latitude: nil, longitude: nil
   end
 
-  def calculate(%LatLng{} = latlng, %DateTime{} = dt, irradiance \\ 1000) do
+  @doc """
+  Formulas taken from an Excel spreadsheet on NOAA's website.
+
+  https://gml.noaa.gov/grad/solcalc/calcdetails.html
+
+  Valid for dates between 1901 and 2099, due to an approximation used
+  in the Julian Day calculation. The web calculator does not use this
+  approximation, and can report values between the years -2000 and +3000.
+
+  The Julian Day is very close to the value produced by the Timex
+  library's `julian_date/6` function.
+  """
+  def solar_geometry(%LatLng{} = latlng, %DateTime{} = dt) do
     latitude_b3 = latlng.latitude
     longitude_b4 = latlng.longitude
     tzoffset_b5 = (dt.utc_offset + dt.std_offset) / 3600.0
@@ -284,10 +296,11 @@ defmodule Collector.Solar do
         )
       end
 
-    incidence_factor = max(sin(radians(solar_elevation_corrected_for_atm_refraction_ag2)), 0.0)
-    solar_energy = irradiance * incidence_factor
-
     %{
+      latitude: latitude_b3,
+      longitude: longitude_b4,
+      time: dt,
+      tz_offset: tzoffset_b5,
       julian_day: julian_day_f2,
       radiance_vector: sun_rad_vector_o2,
       right_ascension: sun_rt_ascen_s2,
@@ -296,8 +309,112 @@ defmodule Collector.Solar do
       sunset_time: time_from_day(sunset_time_z2),
       sunlight_duration: sunlight_duration_aa2,
       solar_elevation: solar_elevation_corrected_for_atm_refraction_ag2,
-      solar_azimuth: solar_azimuth_angle_ah2,
-      solar_energy: solar_energy
+      solar_azimuth: solar_azimuth_angle_ah2
+    }
+  end
+
+  @doc """
+  Approximates the solar energy in W/m2 perpendicular to the ground
+  plane (`solar_energy_incident`) and perpendicular to an arbitrarily
+  tilted solar moudule (`solar_energy_module`).
+
+  ## Notes:
+
+  A commonly used value of intensity at sea level is 1000.0 Kw/m2.
+
+  For the average sunlight spectrum there is an approximate conversion
+  of 0.0079 W/m2 per Lux.
+
+  ## Air Mass
+
+  From https://www.pveducation.org/pvcdrom/properties-of-sunlight/air-mass
+
+  Air mass is the atmospheric distance that solar rays pass through,
+  relative to the distance traveled when the sun is perpendicular to
+  the ground plane (zenith angle = 0°). If `alpha` is the sun elevation
+  angle in degrees, then `zenith = (90 - alpha)`.
+
+  With 0° <= alpha <= 90° and 0° <= zenith <= 90°:
+
+    `air_mass = 1.0 / cos(zenith)`
+
+  or
+
+    `air_mass = 1.0 / sin(alpha)`
+
+  or taking into account the curvature of the atmosphere:
+
+    `air_mass = 1.0 / ( cos(zenith) + 0.50572 * pow(96.07995 - zenith, -1.6364) )`
+
+  or
+
+    `air_mass = 1.0 / ( sin(alpha) + 0.50572 * pow(6.07995 + alpha, -1.6364) )`
+
+  Finally:
+
+    `s_incident = 1.353 * ( (1.0 - k * h) * pow(0.7, pow(air_mass, 0.678)) + (k * h) )`
+
+  where:
+
+  - `s_incident` is the intensity on a plane perpendicular to the sun's
+    rays in units of kW/m2
+  - `air_mass` is the air mass
+  - 1.353 kW/m2 is the solar constant
+  - 0.7 arises from the fact that about 70% of the radiation incident
+    on the atmosphere is transmitted to the Earth
+  - 0.678 is an empirical fit to the observed data and takes into account
+    the non-uniformities in the atmospheric layers
+  - `k` = 0.14 is an empirical constant
+  - `h` is the location height above sea level in kilometers, 0 <= h <= 3
+
+  ## Intensity on an abritrarily tilted solar module
+
+  From https://www.pveducation.org/pvcdrom/properties-of-sunlight/arbitrary-orientation-and-tilt
+
+  For a solar module at an arbitrary tilt and orientation, the intensity
+  on the module is:
+
+    `s_module = s_incident * (cos(alpha) * sin(beta) * cos(psi - theta) + sin(alpha) * cos(beta))`
+
+  where:
+
+  - `s_module` and `s_incident` are respectively the light intensities
+    on the module and of the incoming light in W/m², the `s_incident`
+    being a direct only component
+  - `alpha` is the sun elevation angle
+  - `theta` is the sun azimuth angle
+  - `beta` is the module tilt angle. A module lying flat on the ground
+    has `beta` = 0°, and a vertical module has `beta` = 90°.
+  - `psi` is the azimuth angle that the module faces. The vast majority
+    of modules are aligned to face towards the equator. A module in the
+    southern hemisphere will be facing north with `psi` = 0° and a
+    module in the northern hemisphere will typically face directly
+    south with `psi` = 180°.
+
+  A module that directly faces the sun so that the incoming rays are
+  perpendicular to the module surface has the module tilt equal to the
+  sun's zenith angle (`beta = 90 - alpha`), and the module azimuth angle
+  equal to the sun's azimuth angle (`psi = theta`).
+  """
+  def solar_energy(
+        %{latitude: latitude, solar_elevation: alpha, solar_azimuth: theta},
+        beta \\ nil,
+        psi \\ 180.0,
+        height \\ 0.0
+      ) do
+    beta = if is_nil(beta), do: abs(latitude), else: beta
+    k = 0.14
+    air_mass = 1.0 / (sin(radians(alpha)) + 0.50572 * pow(6.07995 + alpha, -1.6364))
+    s_incident = 1353.0 * ((1.0 - k * height) * pow(0.7, pow(air_mass, 0.678)) + k * height)
+
+    s_module =
+      s_incident *
+        (cos(radians(alpha)) * sin(radians(beta)) * cos(radians(psi - theta)) +
+           sin(radians(alpha)) * cos(radians(beta)))
+
+    %{
+      solar_energy_incident: s_incident,
+      solar_energy_module: s_module
     }
   end
 
@@ -378,6 +495,7 @@ defmodule Collector.Solar do
     time_from = NaiveDateTime.to_time(from)
     date_to = NaiveDateTime.to_date(to)
     time_to = NaiveDateTime.to_time(to)
+    beta = abs(latlng.latitude)
 
     data =
       for date <- date_range(date_from, date_to),
@@ -387,14 +505,14 @@ defmodule Collector.Solar do
           {:error, _} ->
             nil
 
-          {:gap, dt1, dt2} ->
+          {:gap, _dt1, _dt2} ->
             nil
 
-          {:ambiguous, dt1, dt2} ->
+          {:ambiguous, _dt1, _dt2} ->
             nil
 
           {:ok, dt} ->
-            result = calculate(latlng, dt)
+            result = solar_geometry(latlng, dt) |> solar_energy(beta)
             Map.take(result, items) |> Map.put(:at, dt)
         end
       end
