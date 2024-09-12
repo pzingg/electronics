@@ -9,6 +9,8 @@ import adafruit_tsl2591
 from datetime import datetime
 from time import sleep
 
+import config
+
 class Sensor:
   def __init__(self, name, schema, format):
     self.name = name
@@ -136,34 +138,55 @@ class PsVmemorySensor(Sensor):
     return data
 
 
-# jsonbin.io parameters
+# a configuration for jsonbin.io (these do not really exist!)
 bin_id     = '66da5c4ce41b4d34e42ae0c4'
 master_key = '$2a$10$wnduVxwwHRhr03T2Krbi3er8FCBY52jhA47eUCULKVdqbNU6KKF/K'
 access_key = '$2a$10$aLiVcVn5tpmLh1M63GLJuu072wm8b20Ph.kMmrSnRmXBwfdKNfwAO'
+update_method  = 'PUT'
+update_url     = f'https://api.jsonbin.io/v3/b/{bin_id}'
+update_headers = {
+  'X-Master-Key': master_key,
+  'X-Access-Key': access_key
+}
 
 class Logger:
-  def __init__(self, *sensors):
-    self.sensors = {sensor.name: sensor for sensor in sensors}
-    self.dbfile = None
-    self.http = urllib3.PoolManager()
-    self.update_method = 'PUT'
-    # self.update_url = f'https://api.jsonbin.io/v3/b/{bin_id}'
-    self.update_url = 'http://10.0.0.95:4000/'
-    self.update_auth = {
-      'X-Master-Key': master_key,
-      'X-Access-Key': access_key
-    }
+  def __init__(self, dbfile, *sensors, **kwargs):
+    self.dbfile         = dbfile
+    self.sensors        = {sensor.name: sensor for sensor in sensors}
+    self.any_enabled    = False
+    self.http           = urllib3.PoolManager()
+    self.update_method  = kwargs.get('update_method', 'PUT')
+    self.update_url     = kwargs.get('update_url', 'http://localhost/uploads')
+    self.update_headers = kwargs.get('update_headers', { })
 
   def find_sensor(self, name):
     return self.sensors.get(name)
 
-  def setup(self, dbfile):
-    self.setup_db(dbfile)
+  def setup(self):
+    dt = datetime.utcnow()
+    print('Logger startup')
+    print("-" * 60)
+    print("~~ {0:%Y-%m-%d %H:%M:%S} UTC ~~".format(dt))
+
+    self.setup_db()
+
+    enabled = []
     for sensor in self.sensors.values():
       sensor.setup()
+      if sensor.enabled:
+        enabled.append(sensor.name)
 
-  def setup_db(self, dbfile):
-    self.dbfile = dbfile
+    if enabled:
+      any_enabled = True
+      enabled = f'''Sensors {', '.join(enabled)} enabled'''
+    else:
+      enabled = 'No sensors enabled'
+
+    print(f'Database at {self.dbfile}')
+    print(enabled)
+    print(f'Updates to {self.update_url}')
+
+  def setup_db(self):
     conn = sqlite3.connect(self.dbfile)
     cursor = conn.cursor()
 
@@ -180,7 +203,7 @@ class Logger:
     self.log_data(all_data)
 
   def collect_data(self):
-    ''' collect data and assign to class variable '''
+    '''Collect data and assign to class variable'''
     now = datetime.utcnow()
     all_data = []
     for sensor in self.sensors.values():
@@ -189,19 +212,22 @@ class Logger:
     return (now, all_data)
 
   def print_data(self, dt, all_data):
-    ''' print select data in nicely formatted string '''
+    '''Print data in nicely formatted string'''
     print("-" * 60)
-    print("~~ {0:%Y-%m-%d, %H:%M:%S} ~~".format(dt))
-    for sensor_data in all_data:
-      table = sensor_data['table']
-      sensor = self.find_sensor(table)
-      if sensor:
-        sensor.print(sensor_data['data'])
-      else:
-        print(f'Sensor not found {table}')
+    print("~~ {0:%Y-%m-%d, %H:%M:%S} UTC ~~".format(dt))
+    if all_data:
+      for sensor_data in all_data:
+        table = sensor_data['table']
+        sensor = self.find_sensor(table)
+        if sensor:
+          sensor.print(sensor_data['data'])
+        else:
+          print(f'Sensor not found {table}')
+    else:
+      print('No data')
 
   def log_data(self, all_data):
-    ''' log the data into sqlite database '''
+    '''Log the data into sqlite database'''
     conn = sqlite3.connect(self.dbfile)
     cursor = conn.cursor()
 
@@ -255,8 +281,7 @@ class Logger:
     return all_data
 
   def upload_data(self, table, rows):
-    '''send records to cloud server.
-    per jsonbin.io, the response is:
+    '''Send records to cloud server. Per jsonbin.io, the response should be:
     {'record': data, 'metadata': {'parentId': bin_id, 'private': True}}
     '''
     if rows == []:
@@ -266,7 +291,7 @@ class Logger:
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     }
-    headers.update(self.update_auth)
+    headers.update(self.update_headers)
 
     data = {'table': table, 'rows': rows}
     print(f'uploading {len(rows)} rows for {table}')
@@ -286,7 +311,7 @@ class Logger:
       return []
 
   def mark_sent(self, table, ids):
-    '''mark database records as sent'''
+    '''Mark database records as sent'''
 
     if len(ids) == 0:
       return
@@ -305,14 +330,17 @@ class Logger:
     print(f'{rowcount} rows marked')
 
 
+def factory(classname):
+  cls = globals()[classname]
+  return cls()
+
 def main():
-  tls2591 = Tls2591Sensor()
-  cpu = PsCpuSensor()
-  vmemory = PsVmemorySensor()
-  logger = Logger(tls2591, cpu, vmemory)
-  logger.setup('datalogger.db')
+  sensors = [factory(sensor) for sensor in config.sensors]
+  logger = Logger('datalogger.db', *sensors, update_url = config.update_url, headers = config.update_headers)
+  logger.setup()
   schedule.every(1).seconds.do(logger.collect_and_log)
   schedule.every(10).seconds.do(logger.upload_unsent_data)
+
   while True:
     schedule.run_pending()
     sleep(0.5)
