@@ -1,0 +1,7 @@
+<h1>Samples</h1>
+<%= for {title, plot} <- @plots do %>
+  <div>
+    <h2><%= title %></h2>
+    <%= plot %>
+  </div>
+<% end %>
