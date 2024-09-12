@@ -7,7 +7,7 @@ User=pzingg
 WorkingDirectory=/home/pzingg/projects/electronics/solar_logger
 Restart=on-failure
 RestartSec=5s
-ExecStart=ExecStart=/home/pzingg/.virtualenvs/solar/bin/python3 -m logger
+ExecStart=/home/pzingg/.virtualenvs/solar/bin/python3 -m logger
 StandardOutput=append:/home/pzingg/projects/electronics/solar_logger/datalogger.log
 StandardError=append:/home/pzingg/projects/electronics/solar_logger/datalogger.log
 SyslogIdentifier=solar_logger
