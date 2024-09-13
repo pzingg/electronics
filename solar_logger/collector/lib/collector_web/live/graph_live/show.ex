@@ -5,6 +5,7 @@ defmodule CollectorWeb.GraphLive.Show do
 
   import Ecto.Query
 
+  alias Collector.Solar.{LatLng, Luminosity, Panel}
   alias Collector.Visual
 
   @which :data
@@ -63,11 +64,12 @@ defmodule CollectorWeb.GraphLive.Show do
 
     plot =
       Collector.Solar.insolation_plot(
-        [:solar_energy_incident],
+        [:energy_incident],
         latlng,
         graph.from,
         graph.to,
-        time_zone: time_zone
+        time_zone: time_zone,
+        panel_tilt: 0.0
       )
 
     socket
@@ -113,7 +115,15 @@ defmodule CollectorWeb.GraphLive.Show do
       data =
         query
         |> Collector.Repo.all()
-        |> Enum.map(&at_local(&1, time_zone))
+
+      data =
+        if "incident" in graph.items do
+          latlng = Collector.Application.latlng()
+          panel = Panel.new(0.0)
+          Enum.map(data, &with_incident_at_local(&1, latlng, panel, time_zone))
+        else
+          Enum.map(data, &at_local(&1, time_zone))
+        end
 
       last_data =
         base_query
@@ -153,9 +163,9 @@ defmodule CollectorWeb.GraphLive.Show do
 
   defp to_local(_dt, _time_zone), do: nil
 
-  defp at_local(%Collector.Solar.Luminosity{at: at} = str, time_zone) do
+  defp at_local(%Luminosity{at: at} = str, time_zone) do
     str
-    |> Collector.Solar.Luminosity.with_energy()
+    |> Luminosity.with_energy()
     |> Map.from_struct()
     |> Map.put(:at, to_local(at, time_zone))
   end
@@ -164,6 +174,17 @@ defmodule CollectorWeb.GraphLive.Show do
     str
     |> Map.from_struct()
     |> Map.put(:at, to_local(at, time_zone))
+  end
+
+  defp with_incident_at_local(
+         %Luminosity{at: at} = str,
+         %LatLng{} = latlng,
+         %Panel{} = panel,
+         time_zone
+       ) do
+    str
+    |> Luminosity.with_incident(latlng, panel)
+    |> at_local(time_zone)
   end
 
   @impl true

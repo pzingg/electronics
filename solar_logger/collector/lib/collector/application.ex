@@ -35,7 +35,7 @@ defmodule Collector.Application do
   def latlng do
     latitude = Application.fetch_env!(:collector, :latitude)
     longitude = Application.fetch_env!(:collector, :longitude)
-    %Collector.Solar.LatLng{latitude: latitude, longitude: longitude}
+    Collector.Solar.LatLng.new(latitude, longitude)
   end
 
   def time_zone do

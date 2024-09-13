@@ -2,6 +2,8 @@ defmodule Collector.Solar.Luminosity do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias Collector.Solar.{LatLng, Panel, Sun}
+
   schema "luminosity" do
     field :source_id, :integer
     field :visible, :integer
@@ -10,6 +12,7 @@ defmodule Collector.Solar.Luminosity do
     field :at, :utc_datetime_usec
     field :tag, :string
     field :energy, :float, virtual: true
+    field :incident, :float, virtual: true
 
     timestamps(type: :utc_datetime_usec, updated_at: false)
   end
@@ -21,13 +24,27 @@ defmodule Collector.Solar.Luminosity do
     |> validate_required([:source_id, :at])
   end
 
-  def with_energy(%__MODULE__{lux: lux} = record) when is_float(lux) do
-    %__MODULE__{record | energy: 0.0079 * lux}
+  def with_energy(%__MODULE__{lux: lux} = luminosity) when is_float(lux) do
+    %__MODULE__{luminosity | energy: 0.0079 * lux}
   end
 
-  def with_energy(record), do: record
+  def with_energy(luminosity), do: luminosity
+
+  def with_incident(
+        %__MODULE__{at: %DateTime{} = at} = luminosity,
+        %LatLng{} = latlng,
+        %Panel{} = panel
+      ) do
+    energy =
+      Sun.new(latlng, at)
+      |> Collector.Solar.solar_energy(panel)
+
+    %__MODULE__{luminosity | incident: energy.energy_incident}
+  end
+
+  def with_incident(luminosity, _latlng, _panel), do: luminosity
 
   def valid_items() do
-    ~w(energy lux visible infrared)
+    ~w(lux energy incident visible infrared)
   end
 end

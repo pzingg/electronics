@@ -3,12 +3,13 @@ defmodule Collector.Solar do
   The Solar context.
   """
 
+  require Logger
+
   import :math
   import Ecto.Query, warn: false
 
   alias Collector.Repo
-
-  alias Collector.Solar.Luminosity
+  alias Collector.Solar.{LatLng, Luminosity, Panel, Sun}
 
   @doc """
   Returns the list of luminosity.
@@ -118,15 +119,42 @@ defmodule Collector.Solar do
     h = trunc(t * 24.0)
     m = trunc(t * 1440.0 - h * 60.0)
     s = trunc(t * 86400.0 - h * 3600.0 - m * 60.0)
-    Time.new!(h, m, s)
+    {h, day_offset} = {Integer.mod(h, 24), div(h, 24)}
+
+    case Time.new(h, m, s) do
+      {:ok, time} ->
+        {time, day_offset}
+
+      {:error, _reason} ->
+        Logger.error("Cannot build time #{h}:#{m}:#{s} from #{t}")
+        nil
+    end
   end
 
   # Not sure why we are off by two days.
   # MS Excel's epoch should be 1900-01-01
   @epoch Date.new!(1899, 12, 30)
 
-  defmodule LatLng do
-    defstruct latitude: nil, longitude: nil
+  defmodule GeometryData do
+    defstruct latitude: nil,
+              longitude: nil,
+              time: nil,
+              tz_offset: nil,
+              julian_day: nil,
+              radiance_vector: nil,
+              right_ascension: nil,
+              declination: nil,
+              solar_noon: nil,
+              sunrise_time: nil,
+              sunset_time: nil,
+              sunlight_duration: nil,
+              solar_elevation: nil,
+              solar_azimuth: nil
+  end
+
+  defmodule EnergyData do
+    defstruct energy_incident: nil,
+              energy_module: nil
   end
 
   @doc """
@@ -148,7 +176,7 @@ defmodule Collector.Solar do
 
   ## Returns
 
-  A map with these values:
+  A `GeometryData` struct with these values:
 
   - `:latitude` - the latitude supplied as an argument in degrees
   - `:longitude` - the longitude supplied as an argument in degrees
@@ -167,14 +195,18 @@ defmodule Collector.Solar do
   - `:sunlight_duration` - the number of minutes of sunlight
   - `:solar_elevation` - the elevation angle in degrees
   - `:solar_azimuth` - the azimuth angle in degrees
+
+  `:solar_noon`, `:sunrise_time`, and `:sunset_time` are
+  returned as tuples. The first element is the `Time` struct, and
+  the second element is 0 or 1, the day offset.
   """
-  def solar_geometry(%LatLng{} = latlng, %DateTime{} = dt) do
+  def solar_geometry(%Sun{position: latlng, date: dt}) do
     latitude_b3 = latlng.latitude
     longitude_b4 = latlng.longitude
-    tzoffset_b5 = (dt.utc_offset + dt.std_offset) / 3600.0
+    tz_offset_b5 = (dt.utc_offset + dt.std_offset) / 3600.0
     date_b7 = Date.diff(DateTime.to_date(dt), @epoch)
     time_e2 = (dt.hour + dt.minute / 60.0 + dt.second / 3600.0) / 24.0
-    julian_day_f2 = date_b7 + 2_415_018.5 + time_e2 - tzoffset_b5 / 24.0
+    julian_day_f2 = date_b7 + 2_415_018.5 + time_e2 - tz_offset_b5 / 24.0
     julian_century_g2 = (julian_day_f2 - 2_451_545.0) / 36525.0
 
     geom_mean_long_sun_i2 =
@@ -253,13 +285,13 @@ defmodule Collector.Solar do
         )
       )
 
-    solar_noon_x2 = (720.0 - 4.0 * longitude_b4 - eq_of_time_v2 + tzoffset_b5 * 60.0) / 1440.0
+    solar_noon_x2 = (720.0 - 4.0 * longitude_b4 - eq_of_time_v2 + tz_offset_b5 * 60.0) / 1440.0
     sunrise_time_y2 = solar_noon_x2 - ha_sunrise_w2 * 4.0 / 1440.0
     sunset_time_z2 = solar_noon_x2 + ha_sunrise_w2 * 4.0 / 1440.0
     sunlight_duration_aa2 = 8.0 * ha_sunrise_w2
 
     true_solar_time_ab2 =
-      fmod(time_e2 * 1440.0 + eq_of_time_v2 + 4.0 * longitude_b4 - 60.0 * tzoffset_b5, 1440.0)
+      fmod(time_e2 * 1440.0 + eq_of_time_v2 + 4.0 * longitude_b4 - 60.0 * tz_offset_b5, 1440.0)
 
     hour_angle_ac2 =
       if true_solar_time_ab2 / 4.0 < 0 do
@@ -323,11 +355,11 @@ defmodule Collector.Solar do
         )
       end
 
-    %{
+    %GeometryData{
       latitude: latitude_b3,
       longitude: longitude_b4,
       time: dt,
-      tz_offset: tzoffset_b5,
+      tz_offset: tz_offset_b5,
       julian_day: julian_day_f2,
       radiance_vector: sun_rad_vector_o2,
       right_ascension: sun_rt_ascen_s2,
@@ -343,16 +375,20 @@ defmodule Collector.Solar do
 
   @doc """
   Approximates the solar energy in W/m2 perpendicular to the ground
-  plane (`solar_energy_incident`) and perpendicular to an arbitrarily
-  tilted solar moudule (`solar_energy_module`).
+  plane (`energy_incident`) and perpendicular to an arbitrarily
+  tilted solar moudule (`energy_module`).
 
   ## Arguments
 
-  - `:params` is a map as returned from `Collector.Solar.solar_geometry/2`
-    It must contain `:latitude`, `:solar_elevation` and `:solar_azimuth`.
-  - `:panel_tilt` is the tilt angle of the solar panel in degrees. If
+  - `:params` is either a `Sun`, or a `GeometryData` struct as returned from
+    `Collector.Solar.solar_geometry/1`. If the latter, the data
+    must contain `:latitude`, `:solar_elevation` and `:solar_azimuth`.
+  - `:panel` a `Panel` struct describing the orientation of a solar panel,
+    where:
+
+  - `:tilt` is the tilt angle of the solar panel in degrees. If
     omitted, the absolute value of latitude is used.
-  - `:panel_azimuth` is the compass direction that the solar panel
+  - `:azimuth` is the compass direction that the solar panel
     faces, in degrees. If omitted, 0.0 is used for southern latitudes and
     180.0 is used for northern latitudes
   - `:altitude` is the location altitude above sea level in kM.
@@ -360,7 +396,8 @@ defmodule Collector.Solar do
 
   ## Returns
 
-  A map with two values, `:solar_energy_incident` and `:solar_energy_module`.
+  An `EnergyData` struct with two values, `:energy_incident`
+  and `:energy_module`.
 
   ## Notes
 
@@ -442,29 +479,31 @@ defmodule Collector.Solar do
   """
   def solar_energy(
         params,
-        panel_tilt \\ nil,
-        panel_azimuth \\ nil,
-        altitude \\ 0.0
+        panel \\ %Panel{}
       )
 
   def solar_energy(
-        %{solar_elevation: alpha},
-        _panel_tilt,
-        _panel_azimuth,
-        _altitude
+        %Sun{} = sun,
+        %Panel{} = panel
+      ) do
+    solar_geometry(sun)
+    |> solar_energy(panel)
+  end
+
+  def solar_energy(
+        %{solar_elevation: solar_elevation},
+        _panel
       )
-      when alpha <= 0.0 do
+      when solar_elevation <= 0.0 do
     %{
-      solar_energy_incident: 0.0,
-      solar_energy_module: 0.0
+      energy_incident: 0.0,
+      energy_module: 0.0
     }
   end
 
   def solar_energy(
-        %{latitude: latitude, solar_elevation: solar_elevation, solar_azimuth: solar_azimuth},
-        panel_tilt,
-        panel_azimuth,
-        altitude
+        %{solar_elevation: solar_elevation, solar_azimuth: solar_azimuth, latitude: latitude},
+        %Panel{tilt: panel_tilt, azimuth: panel_azimuth, altitude: altitude}
       ) do
     panel_tilt = if is_nil(panel_tilt), do: abs(latitude), else: panel_tilt
 
@@ -488,9 +527,9 @@ defmodule Collector.Solar do
            cos(radians(panel_azimuth - solar_azimuth)) +
            sin(radians(solar_elevation)) * cos(radians(panel_tilt)))
 
-    %{
-      solar_energy_incident: s_incident,
-      solar_energy_module: s_module
+    %EnergyData{
+      energy_incident: s_incident,
+      energy_module: s_module
     }
   end
 
@@ -554,8 +593,8 @@ defmodule Collector.Solar do
   Makes a line plot of solar energy.
 
   `items` is a list of atoms to plot, either one or two of the
-  atoms `:solar_energy_incident` and `:solar_energy_module returned`
-  by `Collector.solar.solar_energy/4`.
+  atoms `:energy_incident` and `:energy_module returned`
+  by `Collector.solar.solar_energy/2`.
 
   `opts` is a keyword list of plot and panel options:
 
@@ -591,6 +630,8 @@ defmodule Collector.Solar do
     panel_tilt = Keyword.get(opts, :panel_tilt)
     panel_azimuth = Keyword.get(opts, :panel_azimuth)
     altitude = Keyword.get(opts, :altitude, 0.0)
+    panel = Panel.new(panel_tilt, panel_azimuth, altitude)
+
     time_zone = Keyword.get(opts, :time_zone, "Etc/UTC")
     interval = Keyword.get(opts, :interval, {10, :minute})
 
@@ -610,7 +651,8 @@ defmodule Collector.Solar do
 
           {:ok, dt} ->
             result =
-              solar_geometry(latlng, dt) |> solar_energy(panel_tilt, panel_azimuth, altitude)
+              Sun.new(latlng, dt)
+              |> solar_energy(panel)
 
             Map.take(result, items) |> Map.put(:at, dt)
         end
