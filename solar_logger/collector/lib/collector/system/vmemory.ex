@@ -16,6 +16,7 @@ defmodule Collector.System.Vmemory do
     field :shared, :integer
     field :slab, :integer
     field :at, :utc_datetime_usec
+    field :tag, :string
 
     timestamps(type: :utc_datetime_usec, updated_at: false)
   end
@@ -36,7 +37,8 @@ defmodule Collector.System.Vmemory do
       :cached,
       :shared,
       :slab,
-      :at
+      :at,
+      :tag
     ])
     |> validate_required([:source_id, :at])
   end

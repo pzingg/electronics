@@ -15,6 +15,7 @@ defmodule Collector.System.Cpu do
     field :guest, :float
     field :guest_nice, :float
     field :at, :utc_datetime_usec
+    field :tag, :string
 
     timestamps(type: :utc_datetime_usec, updated_at: false)
   end
@@ -34,7 +35,8 @@ defmodule Collector.System.Cpu do
       :steal,
       :guest,
       :guest_nice,
-      :at
+      :at,
+      :tag
     ])
     |> validate_required([:source_id, :at])
   end

@@ -8,6 +8,7 @@ defmodule Collector.Solar.Luminosity do
     field :infrared, :integer
     field :lux, :float
     field :at, :utc_datetime_usec
+    field :tag, :string
 
     timestamps(type: :utc_datetime_usec, updated_at: false)
   end
@@ -15,7 +16,7 @@ defmodule Collector.Solar.Luminosity do
   @doc false
   def changeset(luminosity, attrs) do
     luminosity
-    |> cast(attrs, [:source_id, :visible, :infrared, :lux, :at])
+    |> cast(attrs, [:source_id, :visible, :infrared, :lux, :at, :tag])
     |> validate_required([:source_id, :at])
   end
 

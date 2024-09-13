@@ -21,8 +21,8 @@ class Sensor:
   def setup(self):
     pass
 
-  def collect(self, dt):
-    return {'at': dt, 'table': self.name, 'data': self.sensor_data()}
+  def collect(self, dt, tag):
+    return {'table': self.name, 'at': dt, 'tag': tag, 'data': self.sensor_data()}
 
   def print(self, data):
     print(self.format.format_map(data))
@@ -155,6 +155,7 @@ class Logger:
     self.sensors        = {sensor.name: sensor for sensor in sensors}
     self.any_enabled    = False
     self.http           = urllib3.PoolManager()
+    self.tag            = kwargs.get('tag')
     self.update_method  = kwargs.get('update_method', 'PUT')
     self.update_url     = kwargs.get('update_url', 'http://localhost/uploads')
     self.update_headers = kwargs.get('update_headers', { })
@@ -193,7 +194,7 @@ class Logger:
     for sensor in self.sensors.values():
       cols = [f'{col[0]} {col[1]}' for col in sensor.schema]
       cursor.execute(f'''CREATE TABLE IF NOT EXISTS {sensor.name}
-        (source_id INTEGER PRIMARY KEY, at REAL, sent REAL, {', '.join(cols)})''')
+        (source_id INTEGER PRIMARY KEY, tag TEXT, at REAL, sent REAL, {', '.join(cols)})''')
 
     conn.close()
 
@@ -208,7 +209,7 @@ class Logger:
     all_data = []
     for sensor in self.sensors.values():
       if sensor.enabled:
-        all_data.append(sensor.collect(now))
+        all_data.append(sensor.collect(now, self.tag))
     return (now, all_data)
 
   def print_data(self, dt, all_data):
@@ -232,11 +233,12 @@ class Logger:
     cursor = conn.cursor()
 
     for sensor_data in all_data:
-      table = sensor_data['table']
-      dt = sensor_data['at']
-      data = sensor_data['data']
-      cols = ['at'] + list(data.keys())
-      values = [dt] + list(data.values())
+      table  = sensor_data['table']
+      dt     = sensor_data['at']
+      tag    = sensor_data['tag']
+      data   = sensor_data['data']
+      cols   = ['at', 'tag'] + list(data.keys())
+      values = [dt, tag] + list(data.values())
       params = ','.join('?' * len(cols))
       cursor.execute(f'''INSERT INTO {table} ({', '.join(cols)}) VALUES({params})''', values)
       conn.commit()
@@ -336,7 +338,7 @@ def factory(classname):
 
 def main():
   sensors = [factory(sensor) for sensor in config.sensors]
-  logger = Logger('datalogger.db', *sensors, update_url = config.update_url, headers = config.update_headers)
+  logger = Logger('datalogger.db', *sensors, tag = config.tag, update_url = config.update_url, headers = config.update_headers)
   logger.setup()
   schedule.every(1).seconds.do(logger.collect_and_log)
   schedule.every(10).seconds.do(logger.upload_unsent_data)

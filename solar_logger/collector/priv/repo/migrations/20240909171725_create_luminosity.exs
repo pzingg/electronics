@@ -8,6 +8,7 @@ defmodule Collector.Repo.Migrations.CreateLuminosity do
       add :infrared, :integer
       add :lux, :float
       add :at, :utc_datetime_usec
+      add :tag, :string
 
       timestamps(type: :utc_datetime_usec, updated_at: false)
     end

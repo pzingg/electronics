@@ -15,6 +15,7 @@ defmodule Collector.Repo.Migrations.CreateCpu do
       add :guest, :float
       add :guest_nice, :float
       add :at, :utc_datetime_usec
+      add :tag, :string
 
       timestamps(type: :utc_datetime_usec, updated_at: false)
     end

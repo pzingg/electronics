@@ -16,6 +16,7 @@ defmodule Collector.Repo.Migrations.CreateVmemory do
       add :shared, :bigint
       add :slab, :bigint
       add :at, :utc_datetime_usec
+      add :tag, :string
 
       timestamps(type: :utc_datetime_usec, updated_at: false)
     end
