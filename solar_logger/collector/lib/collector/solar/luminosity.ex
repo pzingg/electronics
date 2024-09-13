@@ -9,6 +9,7 @@ defmodule Collector.Solar.Luminosity do
     field :lux, :float
     field :at, :utc_datetime_usec
     field :tag, :string
+    field :energy, :float, virtual: true
 
     timestamps(type: :utc_datetime_usec, updated_at: false)
   end
@@ -20,7 +21,13 @@ defmodule Collector.Solar.Luminosity do
     |> validate_required([:source_id, :at])
   end
 
+  def with_energy(%__MODULE__{lux: lux} = record) when is_float(lux) do
+    %__MODULE__{record | energy: 0.0079 * lux}
+  end
+
+  def with_energy(record), do: record
+
   def valid_items() do
-    ~w(visible infrared lux)
+    ~w(energy lux visible infrared)
   end
 end

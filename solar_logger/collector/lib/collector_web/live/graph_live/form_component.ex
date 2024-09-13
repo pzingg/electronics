@@ -23,7 +23,7 @@ defmodule CollectorWeb.GraphLive.FormComponent do
       >
         <.input field={@form[:from]} type="datetime-local" label="From" />
         <.input field={@form[:to]} type="datetime-local" label="To" />
-        <.input field={@form[:domain]} type="text" label="Domain" />
+        <.input field={@form[:domain]} type="select" label="Domain" options={@domains} />
         <.input
           field={@form[:items]}
           type="select"

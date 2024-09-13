@@ -43,8 +43,10 @@ defmodule Collector.Visual.Graph do
     |> validate_subset(:items, valid_items)
   end
 
-  def new(attrs) do
-    changeset(%__MODULE__{domain: "Cpu", items: ["user", "system"]}, attrs) |> apply_changes()
+  def domains(), do: ~w(Luminosity Cpu Vmemory)
+
+  def new(attrs \\ %{}) do
+    changeset(%__MODULE__{domain: "Luminosity", items: ["lux"]}, attrs) |> apply_changes()
   end
 
   def atomize(item) when is_atom(item), do: item

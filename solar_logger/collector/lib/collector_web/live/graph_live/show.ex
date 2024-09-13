@@ -1,11 +1,13 @@
 defmodule CollectorWeb.GraphLive.Show do
   use CollectorWeb, :live_view
 
+  require Logger
+
   import Ecto.Query
 
   alias Collector.Visual
 
-  @which :solar
+  @which :data
 
   @impl true
   def mount(_params, _session, socket) do
@@ -13,17 +15,44 @@ defmodule CollectorWeb.GraphLive.Show do
       Phoenix.PubSub.subscribe(Collector.PubSub, "uploads")
     end
 
+    from = NaiveDateTime.local_now()
+    from = %NaiveDateTime{from | hour: 0, minute: 0, second: 0}
+    to = NaiveDateTime.add(from, 24, :hour)
+
+    attrs = %{
+      from: from,
+      to: to
+    }
+
+    graph = Visual.Graph.new(attrs)
+
+    socket =
+      socket
+      |> assign(:domains, Visual.Graph.domains())
+      |> assign(:graph, graph)
+      |> assign_plot(@which)
+
     {:ok, socket}
   end
 
   @impl true
   def handle_params(params, _, socket) do
-    graph = Visual.Graph.new(params)
+    action = socket.assigns.live_action
+
+    result =
+      socket.assigns.graph
+      |> Visual.Graph.changeset(params)
+      |> Ecto.Changeset.apply_action(action)
+
+    socket =
+      case result do
+        {:ok, graph} -> assign(socket, :graph, graph)
+        _ -> socket
+      end
 
     {:noreply,
      socket
-     |> assign(:page_title, page_title(socket.assigns.live_action))
-     |> assign(:graph, graph)
+     |> assign(:page_title, page_title(action))
      |> assign_plot(@which)}
   end
 
@@ -47,6 +76,7 @@ defmodule CollectorWeb.GraphLive.Show do
   end
 
   defp assign_plot(socket, :data) do
+    time_zone = Collector.Application.time_zone()
     graph = socket.assigns.graph
 
     query =
@@ -63,23 +93,27 @@ defmodule CollectorWeb.GraphLive.Show do
       assign(socket, plot: plot, updated: "never")
     else
       query =
-        if graph.from do
-          query |> where([i], i.at >= ^graph.from)
-        else
-          query
+        case to_utc(graph.from, time_zone) do
+          %DateTime{} = from ->
+            query |> where([i], i.at >= ^from)
+
+          _ ->
+            query
         end
 
       query =
-        if graph.to do
-          query |> where([i], i.at <= ^graph.to)
-        else
-          query
+        case to_utc(graph.to, time_zone) do
+          %DateTime{} = to ->
+            query |> where([i], i.at <= ^to)
+
+          _ ->
+            query
         end
 
       data =
         query
         |> Collector.Repo.all()
-        |> Enum.map(&Map.from_struct/1)
+        |> Enum.map(&at_local(&1, time_zone))
 
       last_data =
         base_query
@@ -87,15 +121,49 @@ defmodule CollectorWeb.GraphLive.Show do
         |> Collector.Repo.one()
 
       updated =
-        if is_nil(last_data) do
-          "never"
-        else
-          last_data.at
+        case to_local(last_data, time_zone) do
+          %DateTime{} = local -> DateTime.to_iso8601(local)
+          _ -> "never"
         end
 
       plot = Visual.Graph.plot(data, graph.items)
       assign(socket, plot: plot, updated: updated)
     end
+  end
+
+  defp to_utc(%NaiveDateTime{} = naive, time_zone) do
+    case DateTime.from_naive(naive, time_zone) do
+      {:ok, dt} -> Collector.Solar.to_utc(dt)
+      _ -> nil
+    end
+  end
+
+  defp to_utc(_naive, _time_zone), do: nil
+
+  defp to_local(%DateTime{} = dt, time_zone) do
+    case Collector.Solar.to_time_zone(dt, time_zone) do
+      %DateTime{} = local -> local
+      _ -> nil
+    end
+  end
+
+  defp to_local(%{at: at}, time_zone) do
+    to_local(at, time_zone)
+  end
+
+  defp to_local(_dt, _time_zone), do: nil
+
+  defp at_local(%Collector.Solar.Luminosity{at: at} = str, time_zone) do
+    str
+    |> Collector.Solar.Luminosity.with_energy()
+    |> Map.from_struct()
+    |> Map.put(:at, to_local(at, time_zone))
+  end
+
+  defp at_local(%{at: at} = str, time_zone) when is_struct(str) do
+    str
+    |> Map.from_struct()
+    |> Map.put(:at, to_local(at, time_zone))
   end
 
   @impl true
