@@ -245,6 +245,9 @@ class Logger:
 
   def log_data(self, all_data):
     '''Log the data into sqlite database'''
+    if not all_data:
+      return
+
     conn = sqlite3.connect(self.dbfile)
     cursor = conn.cursor()
 

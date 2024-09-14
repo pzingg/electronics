@@ -35,3 +35,4 @@ collector-*.tar
 npm-debug.log
 /assets/node_modules/
 
+config.py
