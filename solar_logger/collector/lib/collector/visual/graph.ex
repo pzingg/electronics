@@ -17,7 +17,7 @@ defmodule Collector.Visual.Graph do
     graph
     |> cast(attrs, [:from, :to, :domain, :items])
     |> validate_required([:domain, :items])
-    |> validate_inclusion(:domain, ~w(Cpu Vmemory Luminosity))
+    |> validate_inclusion(:domain, ~w(Cpu Vmemory Luminosity Solar))
     |> validate_items()
   end
 
@@ -32,6 +32,9 @@ defmodule Collector.Visual.Graph do
 
         "Luminosity" ->
           Collector.Solar.Luminosity.valid_items()
+
+        "Solar" ->
+          ~w(incident module)
 
         other ->
           Logger.error("invalid domain #{other}")
@@ -49,6 +52,10 @@ defmodule Collector.Visual.Graph do
     changeset(%__MODULE__{domain: "Luminosity", items: ["lux"]}, attrs) |> apply_changes()
   end
 
+  def atomize(items) when is_list(items) do
+    Enum.map(items, &atomize(&1))
+  end
+
   def atomize(item) when is_atom(item), do: item
   def atomize(item) when is_binary(item), do: String.to_atom(item)
 
@@ -57,7 +64,7 @@ defmodule Collector.Visual.Graph do
   end
 
   def plot(data, items) do
-    y_cols = Enum.map(items, &atomize(&1))
+    y_cols = atomize(items)
 
     data
     |> Contex.Dataset.new()

@@ -24,22 +24,26 @@ defmodule Collector.Solar.Luminosity do
     |> validate_required([:source_id, :at])
   end
 
+  @doc """
+  See notes in the documentation for `Collect.Solar.solar_energy/2`.
+  0.008333 seems too low?
+  """
   def with_energy(%__MODULE__{lux: lux} = luminosity) when is_float(lux) do
-    %__MODULE__{luminosity | energy: 0.0079 * lux}
+    %__MODULE__{luminosity | energy: 0.0125 * lux}
   end
 
   def with_energy(luminosity), do: luminosity
 
   def with_incident(
         %__MODULE__{at: %DateTime{} = at} = luminosity,
-        %LatLng{} = latlng,
+        %LatLng{} = lat_lng,
         %Panel{} = panel
       ) do
     energy =
-      Sun.new(latlng, at)
+      Sun.new(lat_lng, at)
       |> Collector.Solar.solar_energy(panel)
 
-    %__MODULE__{luminosity | incident: energy.energy_incident}
+    %__MODULE__{luminosity | incident: energy.incident}
   end
 
   def with_incident(luminosity, _latlng, _panel), do: luminosity

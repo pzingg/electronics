@@ -131,10 +131,6 @@ defmodule Collector.Solar do
     end
   end
 
-  # Not sure why we are off by two days.
-  # MS Excel's epoch should be 1900-01-01
-  @epoch Date.new!(1899, 12, 30)
-
   defmodule GeometryData do
     defstruct latitude: nil,
               longitude: nil,
@@ -153,8 +149,8 @@ defmodule Collector.Solar do
   end
 
   defmodule EnergyData do
-    defstruct energy_incident: nil,
-              energy_module: nil
+    defstruct incident: nil,
+              module: nil
   end
 
   @doc """
@@ -162,16 +158,11 @@ defmodule Collector.Solar do
 
   https://gml.noaa.gov/grad/solcalc/calcdetails.html
 
-  Valid for dates between 1901 and 2099, due to an approximation used
-  in the Julian Day calculation. The web calculator does not use this
-  approximation, and can report values between the years -2000 and +3000.
-
-  The Julian Day is very close to the value produced by the Timex
-  library's `julian_date/6` function.
+  Valid for dates between 1949 and 2050.
 
   ## Arguments
 
-  - `latlng` the location coordinates
+  - `lat_lng` the location coordinates
   - `dt` the date and time
 
   ## Returns
@@ -200,15 +191,18 @@ defmodule Collector.Solar do
   returned as tuples. The first element is the `Time` struct, and
   the second element is 0 or 1, the day offset.
   """
-  def solar_geometry(%Sun{position: latlng, date: dt}) do
-    latitude_b3 = latlng.latitude
-    longitude_b4 = latlng.longitude
+  def solar_geometry(%Sun{position: lat_lng, date: dt}) do
+    latitude_b3 = lat_lng.latitude
+    longitude_b4 = lat_lng.longitude
     tz_offset_b5 = (dt.utc_offset + dt.std_offset) / 3600.0
-    date_b7 = Date.diff(DateTime.to_date(dt), @epoch)
     time_e2 = (dt.hour + dt.minute / 60.0 + dt.second / 3600.0) / 24.0
-    julian_day_f2 = date_b7 + 2_415_018.5 + time_e2 - tz_offset_b5 / 24.0
+    julian_day_f2 = julian_date(dt)
     julian_century_g2 = (julian_day_f2 - 2_451_545.0) / 36525.0
 
+    # Mean longitude and anomaly
+    # Michalsky, J. 1988. The Astronomical Almanac's algorithm for
+    #   approximate solar position (1950-2050).
+    #   Solar Energy 40 (3), pp. 227-235.
     geom_mean_long_sun_i2 =
       fmod(
         280.46646 + julian_century_g2 * (36000.76983 + julian_century_g2 * 0.0003032),
@@ -285,7 +279,7 @@ defmodule Collector.Solar do
         )
       )
 
-    solar_noon_x2 = (720.0 - 4.0 * longitude_b4 - eq_of_time_v2 + tz_offset_b5 * 60.0) / 1440.0
+    solar_noon_x2 = (720.0 - 4.0 * longitude_b4 - eq_of_time_v2 + 60.0 * tz_offset_b5) / 1440.0
     sunrise_time_y2 = solar_noon_x2 - ha_sunrise_w2 * 4.0 / 1440.0
     sunset_time_z2 = solar_noon_x2 + ha_sunrise_w2 * 4.0 / 1440.0
     sunlight_duration_aa2 = 8.0 * ha_sunrise_w2
@@ -309,10 +303,17 @@ defmodule Collector.Solar do
         )
       )
 
+    # limit the degrees below the horizon to 9 [+90 -> 99]
+    solar_zenith_angle_ad2 = min(solar_zenith_angle_ad2, 99.0)
+
     solar_elevation_angle_ae2 = 90.0 - solar_zenith_angle_ad2
 
     tanre = tan(radians(solar_elevation_angle_ae2))
 
+    # Refraction correction, degrees
+    # Zimmerman, John C. 1981. Sun-pointing programs and their accuracy.
+    #   SAND81-0761, Experimental Systems Operation Division 4721,
+    #   Sandia National Laboratories, Albuquerque, NM.
     approx_atmospheric_refraction_af2 =
       cond do
         solar_elevation_angle_ae2 > 85.0 ->
@@ -374,9 +375,30 @@ defmodule Collector.Solar do
   end
 
   @doc """
+  Calculate Julian Date per SOLPOS.
+  See https://github.com/gurre/nrel-solpos-2.0/blob/master/solpos.c#L465
+  """
+  def julian_date(dt) do
+    # Michalsky, J. 1988. The Astronomical Almanac's algorithm for
+    #   approximate solar position (1950-2050).  Solar Energy 40 (3), pp. 227-235.
+    dt_utc = to_utc(dt)
+    delta = dt_utc.year - 1949
+
+    if delta < 1 || delta > 101 do
+      raise RuntimeError, "Only valid for UTC years 1950 to 2050"
+    end
+
+    leap_days = trunc(delta / 4.0)
+    date_utc = DateTime.to_date(dt)
+    day_num = Date.diff(date_utc, Date.new!(dt_utc.year, 1, 1)) + 1
+    partial_day = (dt_utc.hour + dt_utc.minute / 60.0 + dt_utc.second / 3600.0) / 24.0
+    2_432_916.5 + delta * 365.0 + leap_days + day_num + partial_day
+  end
+
+  @doc """
   Approximates the solar energy in W/m2 perpendicular to the ground
-  plane (`energy_incident`) and perpendicular to an arbitrarily
-  tilted solar moudule (`energy_module`).
+  plane (`:incident`) and perpendicular to an arbitrarily
+  tilted solar moudule (`:module`).
 
   ## Arguments
 
@@ -396,15 +418,75 @@ defmodule Collector.Solar do
 
   ## Returns
 
-  An `EnergyData` struct with two values, `:energy_incident`
-  and `:energy_module`.
+  An `EnergyData` struct with two values, `:incident` and `:module`.
 
   ## Notes
 
-  A commonly used value of intensity at sea level is 1000.0 Kw/m2.
+  A commonly used value of solar irradiance at sea level is
+  1000.0 W/m2.
 
-  For the average sunlight spectrum there is an approximate conversion
-  of 0.0079 W/m2 per Lux.
+  A 2019 paper https://dx.doi.org/10.21227/mxr7-p365 fixes the
+  conversion of sunlight at 1000 W/m2 to 120000 Lux, so the conversion
+  rate should be 0.0083333 W/m2 per Lux.
+
+  Datasheet and designer notes on the TSL2591 sensor can be found at:
+  https://ams-osram.com/products/sensors/ambient-light-color-spectral-proximity-sensors/ams-tsl25911-ambient-light-sensor#tab/documents
+
+  AN000173 describes Lux equations for the TSL2591
+  AN000170 and AN000172 also relate to Lux calculations
+  AN000167 describes the differences between Lux and W/m2
+
+  The TSL2591 datasheet (page 6) indicates the following conversions
+  from counts to uW/cm2.
+
+  From the Adafruit C++ library at
+  https://github.com/adafruit/Adafruit_TSL2591_Library/blob/master/Adafruit_TSL2591.cpp
+
+  ```
+  full = (ch1_counts << 16) | ch0_counts
+  infrared = ch1_counts
+  visible = ((ch1_counts << 16) | ch0_counts) - ch1_counts
+  ```
+
+  or inverting:
+
+  ```
+  full = visible + infrared
+  ch0_counts = (full & 0xFFFF)
+  ch1_counts = (full >> 16) & 0xFFFF = infrared
+  ```
+
+  Then irradiance conversion for (100ms integration time and 9876x gain) is:
+
+  - White light CHO: 6024 counts / uW/cm2
+  - White light CH1: 1003 counts / uW/cm2
+  - 850 nM CHO: 5338 counts / uW/cm2
+  - 850 nM CH1: 3474 counts / uW/cm2
+
+  and for conversion: 1 uW/cm2 = 0.01 W/m2
+
+  Example for the maximum `visible` and `infrared` counts on a sunny fall day,
+  with 100ms integration time and 1x gain:
+
+  lux        =     65619.94
+  visible    = 829841019
+  infrared   =     12662
+  full       = 829853681
+  ch0_counts =     36849 # full & 0xFFFF
+  ch1_counts =     12662 # (full >> 16) & 0xFFFF, or infrared
+
+  w_m2_ch0 = 0.01 * (ch0 / 6024.0) * (9876.0 / gain) * (100.0 / int_time_ms)
+           = 1.639442231075697 * ch0 / (gain * int_time_ms)
+           = 1.639442231075697 * 36849.0 / 100.0
+           = 604.1
+  w_m2_ch1 = (ch1 / 1003.0) * (9876.0 / gain) * (100.0 / int_time_ms)
+           = 9.846460618145563 * ch1 / (gain * int_time_ms)
+           = 9.846460618145563 * 12662.0 / 100.0
+           = 1207.4
+  w_m2_lux = 65619.94 * 0.0083333
+           = 546.8
+
+  See https://cdn-shop.adafruit.com/datasheets/TSL25911_Datasheet_EN_v1.pdf
 
   ## Air Mass
 
@@ -495,10 +577,7 @@ defmodule Collector.Solar do
         _panel
       )
       when solar_elevation <= 0.0 do
-    %{
-      energy_incident: 0.0,
-      energy_module: 0.0
-    }
+    %EnergyData{incident: 0.0, module: 0.0}
   end
 
   def solar_energy(
@@ -515,22 +594,31 @@ defmodule Collector.Solar do
       end
 
     k = 0.14
-
-    air_mass =
-      1.0 / (sin(radians(solar_elevation)) + 0.50572 * pow(6.07995 + solar_elevation, -1.6364))
-
-    s_incident = 1353.0 * ((1.0 - k * altitude) * pow(0.7, pow(air_mass, 0.678)) + k * altitude)
+    am = air_mass(solar_elevation)
+    s_incident = 1353.0 * ((1.0 - k * altitude) * pow(0.7, pow(am, 0.678)) + k * altitude)
 
     s_module =
       s_incident *
-        (cos(radians(solar_elevation)) * sin(radians(panel_tilt)) *
-           cos(radians(panel_azimuth - solar_azimuth)) +
-           sin(radians(solar_elevation)) * cos(radians(panel_tilt)))
+        module_orientation_factor(solar_elevation, solar_azimuth, panel_tilt, panel_azimuth)
 
     %EnergyData{
-      energy_incident: s_incident,
-      energy_module: s_module
+      incident: s_incident,
+      module: s_module
     }
+  end
+
+  def air_mass(solar_elevation) do
+    # Airmass
+    # Kasten, F. and Young, A. 1989. Revised optical air mass tables
+    #   and approximation formula.
+    #   Applied Optics 28 (22), pp. 4735-4738
+    1.0 / (sin(radians(solar_elevation)) + 0.50572 * pow(6.07995 + solar_elevation, -1.6364))
+  end
+
+  def module_orientation_factor(solar_elevation, solar_azimuth, panel_tilt, panel_azimuth) do
+    cos(radians(solar_elevation)) * sin(radians(panel_tilt)) *
+      cos(radians(panel_azimuth - solar_azimuth)) +
+      sin(radians(solar_elevation)) * cos(radians(panel_tilt))
   end
 
   def date_range(date_from, date_to) do
@@ -592,9 +680,8 @@ defmodule Collector.Solar do
   @doc """
   Makes a line plot of solar energy.
 
-  `items` is a list of atoms to plot, either one or two of the
-  atoms `:energy_incident` and `:energy_module returned`
-  by `Collector.solar.solar_energy/2`.
+  `items` is a list of atoms to plot, either one or two of the atoms
+  `:incident` and `:module` returned by `Collector.solar.solar_energy/2`.
 
   `opts` is a keyword list of plot and panel options:
 
@@ -609,7 +696,7 @@ defmodule Collector.Solar do
   """
   def insolation_plot(
         items,
-        latlng,
+        lat_lng,
         from,
         to,
         opts \\ []
@@ -617,7 +704,7 @@ defmodule Collector.Solar do
 
   def insolation_plot(
         items,
-        %LatLng{} = latlng,
+        %LatLng{} = lat_lng,
         %NaiveDateTime{} = from,
         %NaiveDateTime{} = to,
         opts
@@ -634,6 +721,7 @@ defmodule Collector.Solar do
 
     time_zone = Keyword.get(opts, :time_zone, "Etc/UTC")
     interval = Keyword.get(opts, :interval, {10, :minute})
+    items = Collector.Visual.Graph.atomize(items)
 
     data =
       for date <- date_range(date_from, date_to),
@@ -651,7 +739,7 @@ defmodule Collector.Solar do
 
           {:ok, dt} ->
             result =
-              Sun.new(latlng, dt)
+              Sun.new(lat_lng, dt)
               |> solar_energy(panel)
 
             Map.take(result, items) |> Map.put(:at, dt)

@@ -32,7 +32,7 @@ defmodule Collector.Application do
     :ok
   end
 
-  def latlng do
+  def lat_lng do
     latitude = Application.fetch_env!(:collector, :latitude)
     longitude = Application.fetch_env!(:collector, :longitude)
     Collector.Solar.LatLng.new(latitude, longitude)

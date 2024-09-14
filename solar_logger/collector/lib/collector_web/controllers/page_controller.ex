@@ -49,13 +49,13 @@ defmodule CollectorWeb.PageController do
   end
 
   def samples(conn, _params) do
-    latlng = Collector.Application.latlng()
+    lat_lng = Collector.Application.lat_lng()
     time_zone = Collector.Application.time_zone()
 
     full_year_plot =
       Collector.Solar.insolation_plot(
-        [:energy_incident],
-        latlng,
+        [:incident],
+        lat_lng,
         ~N[2024-01-01 00:00:00],
         ~N[2024-12-31 23:50:00],
         time_zone: time_zone,
@@ -64,8 +64,8 @@ defmodule CollectorWeb.PageController do
 
     october_plot =
       Collector.Solar.insolation_plot(
-        [:energy_incident],
-        latlng,
+        [:incident],
+        lat_lng,
         ~N[2024-10-01 00:00:00],
         ~N[2024-10-31 23:50:00],
         time_zone: time_zone,
@@ -74,8 +74,8 @@ defmodule CollectorWeb.PageController do
 
     halloween_plot =
       Collector.Solar.insolation_plot(
-        [:energy_incident, :energy_module],
-        latlng,
+        [:incident, :module],
+        lat_lng,
         ~N[2024-10-31 04:00:00],
         ~N[2024-10-31 20:00:00],
         time_zone: time_zone,

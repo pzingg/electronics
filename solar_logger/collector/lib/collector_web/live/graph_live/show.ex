@@ -8,8 +8,6 @@ defmodule CollectorWeb.GraphLive.Show do
   alias Collector.Solar.{LatLng, Luminosity, Panel}
   alias Collector.Visual
 
-  @which :data
-
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -31,7 +29,7 @@ defmodule CollectorWeb.GraphLive.Show do
       socket
       |> assign(:domains, Visual.Graph.domains())
       |> assign(:graph, graph)
-      |> assign_plot(@which)
+      |> assign_plot()
 
     {:ok, socket}
   end
@@ -54,31 +52,32 @@ defmodule CollectorWeb.GraphLive.Show do
     {:noreply,
      socket
      |> assign(:page_title, page_title(action))
-     |> assign_plot(@which)}
+     |> assign_plot()}
   end
 
-  defp assign_plot(socket, :solar) do
-    latlng = Collector.Application.latlng()
+  defp assign_plot(socket) do
+    lat_lng = Collector.Application.lat_lng()
     time_zone = Collector.Application.time_zone()
     graph = socket.assigns.graph
 
-    plot =
-      Collector.Solar.insolation_plot(
-        [:energy_incident],
-        latlng,
-        graph.from,
-        graph.to,
-        time_zone: time_zone,
-        panel_tilt: 0.0
-      )
+    if graph.domain == "Solar" do
+      plot =
+        Collector.Solar.insolation_plot(
+          graph.items,
+          lat_lng,
+          graph.from,
+          graph.to,
+          time_zone: time_zone,
+          panel_tilt: 0.0
+        )
 
-    socket
-    |> assign(:plot, plot)
-    |> assign_new(:updated, fn -> "never" end)
+      assign(socket, :plot, plot)
+    else
+      assign_data_plot(socket, lat_lng, time_zone)
+    end
   end
 
-  defp assign_plot(socket, :data) do
-    time_zone = Collector.Application.time_zone()
+  defp assign_data_plot(socket, lat_lng, time_zone) do
     graph = socket.assigns.graph
 
     query =
@@ -118,9 +117,8 @@ defmodule CollectorWeb.GraphLive.Show do
 
       data =
         if "incident" in graph.items do
-          latlng = Collector.Application.latlng()
           panel = Panel.new(0.0)
-          Enum.map(data, &with_incident_at_local(&1, latlng, panel, time_zone))
+          Enum.map(data, &with_incident_at_local(&1, lat_lng, panel, time_zone))
         else
           Enum.map(data, &at_local(&1, time_zone))
         end
@@ -177,13 +175,13 @@ defmodule CollectorWeb.GraphLive.Show do
   end
 
   defp with_incident_at_local(
-         %Luminosity{at: at} = str,
-         %LatLng{} = latlng,
+         %Luminosity{} = luminosity,
+         %LatLng{} = lat_lng,
          %Panel{} = panel,
          time_zone
        ) do
-    str
-    |> Luminosity.with_incident(latlng, panel)
+    luminosity
+    |> Luminosity.with_incident(lat_lng, panel)
     |> at_local(time_zone)
   end
 
@@ -192,13 +190,13 @@ defmodule CollectorWeb.GraphLive.Show do
     {:noreply,
      socket
      |> assign(:graph, graph)
-     |> assign_plot(@which)}
+     |> assign_plot()}
   end
 
   def handle_info({:data_uploaded, %{domain: domain}}, socket) do
     socket =
-      if @which == :data && socket.assigns.graph.domain == domain do
-        assign_plot(socket, :data)
+      if socket.assigns.graph.domain == domain do
+        assign_plot(socket)
       else
         socket
       end

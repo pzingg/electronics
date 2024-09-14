@@ -2,64 +2,69 @@ defmodule SolarCalculationTest do
   # Use the module
   use ExUnit.Case, async: true
 
+  test "julian date at noon 1 Jan 2000" do
+    dt = DateTime.new!(Date.new!(2000, 1, 1), Time.new!(12, 0, 0))
+    jd = Collector.Solar.julian_date(dt)
+
+    assert_in_delta(jd, 2_451_545.0, 0.01)
+  end
+
   describe "solar geometry" do
     test "line 121" do
-      latlng = %Collector.Solar.LatLng{
+      lat_lng = %Collector.Solar.LatLng{
         latitude: 40.0,
         longitude: -105.0
       }
 
       # UTC-6 in Central Daylight Time
       dt = DateTime.new!(Date.new!(2010, 6, 21), Time.new!(12, 0, 0), "America/Los_Angeles")
-
-      result = Collector.Solar.solar_geometry(latlng, dt)
+      sun = Collector.Solar.Sun.new(lat_lng, dt)
+      result = Collector.Solar.solar_geometry(sun)
 
       assert_in_delta(result.julian_day, 2_455_369.292, 0.01)
       assert_in_delta(result.radiance_vector, 1.01627, 0.001)
       assert_in_delta(result.right_ascension, 90.32517, 0.001)
       assert_in_delta(result.declination, 23.43815, 0.001)
-      assert result.solar_noon == ~T[12:01:49]
-      assert result.sunrise_time == ~T[04:31:22]
-      assert result.sunset_time == ~T[19:32:15]
+      assert elem(result.solar_noon, 0) == ~T[12:01:49]
+      assert elem(result.sunrise_time, 0) == ~T[04:31:22]
+      assert elem(result.sunset_time, 0) == ~T[19:32:15]
       assert_in_delta(result.sunlight_duration, 900.88134, 0.001)
       assert_in_delta(result.solar_elevation, 73.43848, 0.001)
       assert_in_delta(result.solar_azimuth, 178.53323, 0.001)
     end
 
     test "kentfield" do
-      latlng = %Collector.Solar.LatLng{
+      lat_lng = %Collector.Solar.LatLng{
         latitude: 37.94,
         longitude: -122.55
       }
 
       # UTC-8 in Pacific Daylight Time
       dt = DateTime.new!(Date.new!(2024, 9, 10), Time.new!(12, 0, 0), "America/Los_Angeles")
-
-      result = Collector.Solar.solar_geometry(latlng, dt)
+      sun = Collector.Solar.Sun.new(lat_lng, dt)
+      result = Collector.Solar.solar_geometry(sun)
 
       assert_in_delta(result.julian_day, 2_460_564.29, 0.01)
-      assert result.solar_noon == ~T[13:06:55]
-      assert result.sunrise_time == ~T[06:48:31]
-      assert result.sunset_time == ~T[19:25:19]
+      assert elem(result.solar_noon, 0) == ~T[13:06:55]
+      assert elem(result.sunrise_time, 0) == ~T[06:48:31]
+      assert elem(result.sunset_time, 0) == ~T[19:25:19]
       assert_in_delta(result.sunlight_duration, 756.80777, 0.001)
     end
   end
 
   test "solar energy" do
-    latlng = %Collector.Solar.LatLng{
+    lat_lng = %Collector.Solar.LatLng{
       latitude: 37.94,
       longitude: -122.55
     }
 
     # UTC-8 in Pacific Daylight Time
     dt = DateTime.new!(Date.new!(2024, 9, 10), Time.new!(12, 0, 0), "America/Los_Angeles")
-
-    result =
-      Collector.Solar.solar_geometry(latlng, dt)
-      |> Collector.Solar.solar_energy(23.0)
-
-    assert_in_delta(result.solar_energy_incident, 894.18920, 0.001)
-    assert_in_delta(result.solar_energy_module, 843.050206, 0.001)
+    sun = Collector.Solar.Sun.new(lat_lng, dt)
+    panel = Collector.Solar.Panel.new(23.0)
+    result = Collector.Solar.solar_energy(sun, panel)
+    assert_in_delta(result.incident, 894.18920, 0.001)
+    assert_in_delta(result.module, 843.050206, 0.001)
   end
 
   test "date range" do

@@ -337,15 +337,17 @@ def factory(classname):
   return cls()
 
 def main():
+  collection_interval = config.collection_interval
+  sync_interval = min(20 * collection_interval, 300)
   sensors = [factory(sensor) for sensor in config.sensors]
   logger = Logger('datalogger.db', *sensors, tag = config.tag, update_url = config.update_url, headers = config.update_headers)
   logger.setup()
-  schedule.every(1).seconds.do(logger.collect_and_log)
-  schedule.every(10).seconds.do(logger.upload_unsent_data)
+  schedule.every(collection_interval).seconds.do(logger.collect_and_log)
+  schedule.every(sync_interval).seconds.do(logger.upload_unsent_data)
 
   while True:
     schedule.run_pending()
-    sleep(0.5)
+    sleep(1)
 
 if __name__ == '__main__':
   main()
