@@ -1,15 +1,18 @@
+import adafruit_tsl2591
+import board
 import json
-import urllib3
+import logging
+import psutil as ps
 import schedule
 import sqlite3
-import psutil as ps
-import board
-import adafruit_tsl2591
+import urllib3
 
 from datetime import datetime
 from time import sleep
 
 import config
+
+logger = logging.getLogger('logger')
 
 class Sensor:
   def __init__(self, name, schema, format):
@@ -28,8 +31,8 @@ class Sensor:
     else:
       return None
 
-  def print(self, data):
-    print(self.format.format_map(data))
+  def print_log(self, data):
+    logger.info(self.format.format_map(data))
 
   def sensor_data(self, dt):
     return {}
@@ -41,7 +44,7 @@ tls2591_columns = [
   ('lux', 'REAL')
 ]
 
-tls2591_format = "LIGHT // Visible: {visible:,d}, Infrared: {infrared:,d}, Lux: {lux:,.0f}"
+tls2591_format = "Luminosity visible: {visible:,d}, infrared: {infrared:,d}, lux: {lux:,.0f}"
 
 class Tls2591Sensor(Sensor):
   def __init__(self):
@@ -73,7 +76,7 @@ class Tls2591Sensor(Sensor):
       self.enabled = True
 
     except AttributeError as e:
-      print(f'Tls2591 sensor not enabled: {e}')
+      logger.error(f'Tls2591 init error: {e}')
 
   def sensor_data(self, dt):
     # In bright light Tls2591 can throw a RuntimeError when
@@ -87,7 +90,7 @@ class Tls2591Sensor(Sensor):
       lux = self.tsl.lux
       return {'visible': visible, 'infrared': infrared, 'lux': lux}
     except RuntimeError as e:
-      print(f'{dt} Tls2591: {e}')
+      logger.error(f'Tls2591 read error: {e}')
       return None
 
 cpu_columns = [
@@ -103,7 +106,7 @@ cpu_columns = [
   ('guest_nice', 'REAL')
 ]
 
-cpu_format = "CPU TIME // User: {user:,.0f}, System: {system:,.0f}, Idle: {idle:,.0f}"
+cpu_format = "Cpu time user: {user:,.0f}, system: {system:,.0f}, idle: {idle:,.0f}"
 
 class PsCpuSensor(Sensor):
   def __init__(self):
@@ -133,7 +136,7 @@ vmemory_columns = [
   ('slab', 'INTEGER')
 ]
 
-vmemory_format = "VIRT MEM // Total: {total:,d}, Available: {available:,d}"
+vmemory_format = "Virtual memory total: {total:,d}, available: {available:,d}"
 
 class PsVmemorySensor(Sensor):
   def __init__(self):
@@ -177,9 +180,7 @@ class Logger:
 
   def setup(self):
     dt = datetime.utcnow()
-    print('Logger startup')
-    print("-" * 60)
-    print("~~ {0:%Y-%m-%d %H:%M:%S} UTC ~~".format(dt))
+    logger.info('Logger startup')
 
     self.setup_db()
 
@@ -195,9 +196,9 @@ class Logger:
     else:
       enabled = 'No sensors enabled'
 
-    print(f'Database at {self.dbfile}')
-    print(enabled)
-    print(f'Updates to {self.update_url}')
+    logger.info(f'Database at {self.dbfile}')
+    logger.info(enabled)
+    logger.info(f'Updates to {self.update_url}')
 
   def setup_db(self):
     conn = sqlite3.connect(self.dbfile)
@@ -212,8 +213,8 @@ class Logger:
 
   def collect_and_log(self):
     dt, all_data = self.collect_data()
-    self.print_data(dt, all_data)
-    self.log_data(all_data)
+    self.print_log(dt, all_data)
+    self.persist_data(all_data)
 
   def collect_data(self):
     '''Collect data from all enabled sensors'''
@@ -228,23 +229,21 @@ class Logger:
 
     return (now, all_data)
 
-  def print_data(self, dt, all_data):
-    '''Print data in nicely formatted string'''
-    print("-" * 60)
-    print("~~ {0:%Y-%m-%d, %H:%M:%S} UTC ~~".format(dt))
+  def print_log(self, dt, all_data):
+    '''Write logger data in nicely formatted string'''
     if all_data:
       for sensor_data in all_data:
         table = sensor_data['table']
         sensor = self.find_sensor(table)
         if sensor:
-          sensor.print(sensor_data['data'])
+          sensor.print_log(sensor_data['data'])
         else:
-          print(f'Sensor not found {table}')
+          logger.error(f'Sensor not found: {table}')
     else:
-      print('No data')
+      logger.info('No sensor data')
 
-  def log_data(self, all_data):
-    '''Log the data into sqlite database'''
+  def persist_data(self, all_data):
+    '''Persist the data into the sqlite database'''
     if not all_data:
       return
 
@@ -315,10 +314,10 @@ class Logger:
     headers.update(self.update_headers)
 
     data = {'table': table, 'rows': rows}
-    print(f'uploading {len(rows)} rows for {table}')
+    logger.info(f'Uploading {len(rows)} rows for {table}')
     try:
       resp = self.http.request(self.update_method, self.update_url, headers=headers, json=data)
-      print(f'response status {resp.status}')
+      logger.debug(f'Response status {resp.status}')
 
       if resp.status < 200 or resp.status >= 300:
         return []
@@ -328,16 +327,15 @@ class Logger:
       ids = [row['source_id'] for row in rows if 'source_id' in row]
       return ids
     except:
-      print(f'no connection to {self.update_url}')
+      logger.error(f'No connection to {self.update_url}')
       return []
 
   def mark_sent(self, table, ids):
     '''Mark database records as sent'''
-
     if len(ids) == 0:
       return
 
-    print(f'marking {table} ids {ids}')
+    logger.debug(f'Table {table}: marking ids {ids}')
     now = datetime.utcnow()
     where_params = ','.join('?' * len(ids))
 
@@ -348,7 +346,7 @@ class Logger:
     conn.commit()
     conn.close()
 
-    print(f'{rowcount} rows marked')
+    logger.info(f'Table {table}: {rowcount} rows marked')
 
 
 def factory(classname):
@@ -356,11 +354,18 @@ def factory(classname):
   return cls()
 
 def main():
-  collection_interval = config.collection_interval
-  sync_interval = min(20 * collection_interval, 300)
+  logging.basicConfig(
+    filename='datalogger.log',
+    level=logging.INFO,
+    format='%(asctime)s %(name)s [%(levelname)s] %(message)s'
+  )
+
   sensors = [factory(sensor) for sensor in config.sensors]
   logger = Logger('datalogger.db', *sensors, tag = config.tag, update_url = config.update_url, headers = config.update_headers)
   logger.setup()
+
+  collection_interval = config.collection_interval
+  sync_interval = min(20 * collection_interval, 300)
   schedule.every(collection_interval).seconds.do(logger.collect_and_log)
   schedule.every(sync_interval).seconds.do(logger.upload_unsent_data)
 

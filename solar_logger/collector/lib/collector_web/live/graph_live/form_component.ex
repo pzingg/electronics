@@ -1,8 +1,6 @@
 defmodule CollectorWeb.GraphLive.FormComponent do
   use CollectorWeb, :live_component
 
-  require Logger
-
   alias Collector.Visual
 
   @impl true
@@ -41,8 +39,6 @@ defmodule CollectorWeb.GraphLive.FormComponent do
 
   @impl true
   def update(%{graph: graph} = assigns, socket) do
-    Logger.error("update form #{inspect(graph)}")
-
     {:ok,
      socket
      |> assign(assigns)

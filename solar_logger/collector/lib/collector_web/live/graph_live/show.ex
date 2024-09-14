@@ -1,8 +1,6 @@
 defmodule CollectorWeb.GraphLive.Show do
   use CollectorWeb, :live_view
 
-  require Logger
-
   import Ecto.Query
 
   alias Collector.Solar.{LatLng, Luminosity, Panel}
