@@ -86,7 +86,7 @@ class Tls2591Sensor(Sensor):
       infrared = self.tsl.infrared
       lux = self.tsl.lux
       return {'visible': visible, 'infrared': infrared, 'lux': lux}
-    except RuntimeError, e:
+    except RuntimeError as e:
       print(f'{dt} Tls2591 error {e.message}')
       return None
 
