@@ -1,22 +1,22 @@
 <.header>
-  Graph
-  <:subtitle>This is a graph.</:subtitle>
+  <%= @graph.domain %> Chart
   <:actions>
     <.link patch={~p"/graph/edit"} phx-click={JS.push_focus()}>
-      <.button>Edit graph</.button>
+      <.button>Edit chart settings</.button>
     </.link>
   </:actions>
 </.header>
 
 <.list>
-  <:item title="From"><%= @graph.from %></:item>
-  <:item title="To"><%= @graph.to %></:item>
-  <:item title="Domain"><%= @graph.domain %></:item>
-  <:item title="Items"><%= Enum.join(@graph.items, ", ") %></:item>
+  <:item title="From"><%= @graph_from %></:item>
+  <:item title="To"><%= @graph_to %></:item>
+  <:item title="Items"><%= @graph_items %></:item>
   <:item title="Last Data"><%= @updated %></:item>
 </.list>
 
-<%= @plot %>
+<div class="mt-4">
+  <%= @plot %>
+</div>
 
 <.modal :if={@live_action == :edit} id="graph-modal" show on_cancel={JS.patch(~p"/graph")}>
   <.live_component

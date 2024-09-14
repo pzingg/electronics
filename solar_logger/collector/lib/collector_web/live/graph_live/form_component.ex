@@ -11,7 +11,7 @@ defmodule CollectorWeb.GraphLive.FormComponent do
     <div>
       <.header>
         <%= @title %>
-        <:subtitle>Use this form to manage graphs in your database.</:subtitle>
+        <:subtitle>Use this form to change the settings for the chart.</:subtitle>
       </.header>
 
       <.simple_form
@@ -32,7 +32,7 @@ defmodule CollectorWeb.GraphLive.FormComponent do
           multiple
         />
         <:actions>
-          <.button phx-disable-with="Saving...">Show Graph</.button>
+          <.button phx-disable-with="Saving...">Show chart</.button>
         </:actions>
       </.simple_form>
     </div>

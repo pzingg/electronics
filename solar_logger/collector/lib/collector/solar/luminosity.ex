@@ -25,11 +25,13 @@ defmodule Collector.Solar.Luminosity do
   end
 
   @doc """
+  We use a conversion of 116 lux = 1 W/m2.
+  Adding in a fudge factor.
+
   See notes in the documentation for `Collect.Solar.solar_energy/2`.
-  0.008333 seems too low?
   """
   def with_energy(%__MODULE__{lux: lux} = luminosity) when is_float(lux) do
-    %__MODULE__{luminosity | energy: 0.0125 * lux}
+    %__MODULE__{luminosity | energy: lux / 116.0}
   end
 
   def with_energy(luminosity), do: luminosity
@@ -49,6 +51,6 @@ defmodule Collector.Solar.Luminosity do
   def with_incident(luminosity, _latlng, _panel), do: luminosity
 
   def valid_items() do
-    ~w(lux energy incident visible infrared)
+    ~w(Energy Incident Lux Visible Infrared)
   end
 end

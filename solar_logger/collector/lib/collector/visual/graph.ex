@@ -4,6 +4,9 @@ defmodule Collector.Visual.Graph do
 
   require Logger
 
+  @plot_height 600
+  @plot_width 1000
+
   embedded_schema do
     field :from, :naive_datetime
     field :to, :naive_datetime
@@ -34,7 +37,7 @@ defmodule Collector.Visual.Graph do
           Collector.Solar.Luminosity.valid_items()
 
         "Solar" ->
-          ~w(incident module)
+          ~w(Incident Module)
 
         other ->
           Logger.error("invalid domain #{other}")
@@ -49,15 +52,25 @@ defmodule Collector.Visual.Graph do
   def domains(), do: ~w(Luminosity Cpu Vmemory)
 
   def new(attrs \\ %{}) do
-    changeset(%__MODULE__{domain: "Luminosity", items: ["lux"]}, attrs) |> apply_changes()
+    [item | _rest] = Collector.Solar.Luminosity.valid_items()
+    changeset(%__MODULE__{domain: "Luminosity", items: [item]}, attrs) |> apply_changes()
   end
 
   def atomize(items) when is_list(items) do
     Enum.map(items, &atomize(&1))
   end
 
+  def atomize(item) when is_binary(item) do
+    item
+    |> String.downcase()
+    |> String.to_atom()
+  end
+
   def atomize(item) when is_atom(item), do: item
-  def atomize(item) when is_binary(item), do: String.to_atom(item)
+
+  def strftime(%DateTime{} = date), do: Calendar.strftime(date, "%d-%b-%Y %I:%M:%S %p")
+  def strftime(%NaiveDateTime{} = date), do: Calendar.strftime(date, "%d-%b-%Y %I:%M:%S %p")
+  def strftime(_), do: ""
 
   def plot([], _items) do
     "Nothing to plot"
@@ -66,14 +79,15 @@ defmodule Collector.Visual.Graph do
   def plot(data, items) do
     y_cols = atomize(items)
 
+    # Some other things to try:
+    # legend_setting: :legend_right,
+    # custom_x_scale: timescale,
     data
     |> Contex.Dataset.new()
     |> Contex.Plot.new(
       Contex.LinePlot,
-      600,
-      400,
-      # legend_setting: :legend_right,
-      # custom_x_scale: timescale,
+      @plot_width,
+      @plot_height,
       smoothed: false,
       mapping: %{
         x_col: :at,

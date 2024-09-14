@@ -28,7 +28,7 @@ defmodule CollectorWeb.GraphLive.Show do
     socket =
       socket
       |> assign(:domains, Visual.Graph.domains())
-      |> assign(:graph, graph)
+      |> assign_graph(graph)
       |> assign_plot()
 
     {:ok, socket}
@@ -45,7 +45,7 @@ defmodule CollectorWeb.GraphLive.Show do
 
     socket =
       case result do
-        {:ok, graph} -> assign(socket, :graph, graph)
+        {:ok, graph} -> assign_graph(socket, graph)
         _ -> socket
       end
 
@@ -53,6 +53,19 @@ defmodule CollectorWeb.GraphLive.Show do
      socket
      |> assign(:page_title, page_title(action))
      |> assign_plot()}
+  end
+
+  defp assign_graph(socket, graph) do
+    graph_from = Visual.Graph.strftime(graph.from)
+    graph_to = Visual.Graph.strftime(graph.to)
+    graph_items = Enum.join(graph.items, ", ")
+
+    assign(socket,
+      graph: graph,
+      graph_from: graph_from,
+      graph_to: graph_to,
+      graph_items: graph_items
+    )
   end
 
   defp assign_plot(socket) do
@@ -91,7 +104,7 @@ defmodule CollectorWeb.GraphLive.Show do
 
     if is_nil(query) do
       plot = Visual.Graph.plot([], graph.items)
-      assign(socket, plot: plot, updated: "never")
+      assign(socket, plot: plot, updated: "Never")
     else
       query =
         case to_utc(graph.from, time_zone) do
@@ -116,7 +129,7 @@ defmodule CollectorWeb.GraphLive.Show do
         |> Collector.Repo.all()
 
       data =
-        if "incident" in graph.items do
+        if "Incident" in graph.items do
           panel = Panel.new(0.0)
           Enum.map(data, &with_incident_at_local(&1, lat_lng, panel, time_zone))
         else
@@ -130,8 +143,8 @@ defmodule CollectorWeb.GraphLive.Show do
 
       updated =
         case to_local(last_data, time_zone) do
-          %DateTime{} = local -> DateTime.to_iso8601(local)
-          _ -> "never"
+          %DateTime{} = local -> Collector.Visual.Graph.strftime(local)
+          _ -> "Never"
         end
 
       plot = Visual.Graph.plot(data, graph.items)
@@ -189,7 +202,7 @@ defmodule CollectorWeb.GraphLive.Show do
   def handle_info({CollectorWeb.GraphLive.FormComponent, {:saved, graph}}, socket) do
     {:noreply,
      socket
-     |> assign(:graph, graph)
+     |> assign_graph(graph)
      |> assign_plot()}
   end
 
@@ -204,6 +217,6 @@ defmodule CollectorWeb.GraphLive.Show do
     {:noreply, socket}
   end
 
-  defp page_title(:show), do: "Show Graph"
-  defp page_title(:edit), do: "Edit Graph"
+  defp page_title(:show), do: "Chart"
+  defp page_title(:edit), do: "Edit chart"
 end

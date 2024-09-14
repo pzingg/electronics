@@ -44,6 +44,6 @@ defmodule Collector.System.Vmemory do
   end
 
   def valid_items() do
-    ~w(total available percent used free active inactive buffers cached shared slab)
+    ~w(Total Available Percent Used Free Active Inactive Buffers Cached Shared Slab)
   end
 end

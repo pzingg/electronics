@@ -395,6 +395,9 @@ defmodule Collector.Solar do
     2_432_916.5 + delta * 365.0 + leap_days + day_num + partial_day
   end
 
+  # Extra-terrestrial raditaion, could be 1353.0, but we will use lower value.
+  @solar_etr 1000.0
+
   @doc """
   Approximates the solar energy in W/m2 perpendicular to the ground
   plane (`:incident`) and perpendicular to an arbitrarily
@@ -422,19 +425,23 @@ defmodule Collector.Solar do
 
   ## Notes
 
-  A commonly used value of solar irradiance at sea level is
-  1000.0 W/m2.
+  We could use 1353 W/m2 as the value of extra-terrestrial radiation,
+  or `etr`, but we will use 1000 to get closer to the values recorded
+  by our sensor.
 
-  A 2019 paper https://dx.doi.org/10.21227/mxr7-p365 fixes the
-  conversion of sunlight at 1000 W/m2 to 120000 Lux, so the conversion
-  rate should be 0.0083333 W/m2 per Lux.
+  We use a conversion of 116 lux = 1 W/m2.
+
+  See P. R. Michael, D. E. Johnston, and W. Moreno, “A conversion guide:
+    solar irradiance and lux illuminance,”
+    Journal of Measurements in Engineering, Vol. 8, No. 4, pp. 153–166, Dec. 2020
+    https://doi.org/10.21595/jme.2020.21667
 
   Datasheet and designer notes on the TSL2591 sensor can be found at:
   https://ams-osram.com/products/sensors/ambient-light-color-spectral-proximity-sensors/ams-tsl25911-ambient-light-sensor#tab/documents
 
-  AN000173 describes Lux equations for the TSL2591
-  AN000170 and AN000172 also relate to Lux calculations
-  AN000167 describes the differences between Lux and W/m2
+  AN000173 describes lux equations for the TSL2591
+  AN000170 and AN000172 also relate to lux calculations
+  AN000167 describes the differences between lux and W/m2
 
   The TSL2591 datasheet (page 6) indicates the following conversions
   from counts to uW/cm2.
@@ -468,7 +475,7 @@ defmodule Collector.Solar do
   Example for the maximum `visible` and `infrared` counts on a sunny fall day,
   with 100ms integration time and 1x gain:
 
-  lux        =     65619.94
+  lux        =  65619.94
   visible    = 829841019
   infrared   =     12662
   full       = 829853681
@@ -483,8 +490,8 @@ defmodule Collector.Solar do
            = 9.846460618145563 * ch1 / (gain * int_time_ms)
            = 9.846460618145563 * 12662.0 / 100.0
            = 1207.4
-  w_m2_lux = 65619.94 * 0.0083333
-           = 546.8
+  w_m2_lux = 65619.94 / 116.0
+           = 565.7
 
   See https://cdn-shop.adafruit.com/datasheets/TSL25911_Datasheet_EN_v1.pdf
 
@@ -515,14 +522,14 @@ defmodule Collector.Solar do
 
   Finally:
 
-    `s_incident = 1.353 * ( (1.0 - k * h) * pow(0.7, pow(air_mass, 0.678)) + (k * h) )`
+    `s_incident = etr * ( (1.0 - k * h) * pow(0.7, pow(air_mass, 0.678)) + (k * h) )`
 
   where:
 
   - `s_incident` is the intensity on a plane perpendicular to the sun's
     rays in units of kW/m2
   - `air_mass` is the air mass
-  - 1.353 kW/m2 is the solar constant
+  - `etr` is the extra-terrestrial solar radiation (1000 or 1353 W/m2)
   - 0.7 arises from the fact that about 70% of the radiation incident
     on the atmosphere is transmitted to the Earth
   - 0.678 is an empirical fit to the observed data and takes into account
@@ -595,7 +602,7 @@ defmodule Collector.Solar do
 
     k = 0.14
     am = air_mass(solar_elevation)
-    s_incident = 1353.0 * ((1.0 - k * altitude) * pow(0.7, pow(am, 0.678)) + k * altitude)
+    s_incident = @solar_etr * ((1.0 - k * altitude) * pow(0.7, pow(am, 0.678)) + k * altitude)
 
     s_module =
       s_incident *

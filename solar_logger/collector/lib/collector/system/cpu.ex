@@ -42,6 +42,6 @@ defmodule Collector.System.Cpu do
   end
 
   def valid_items() do
-    ~w(user nice system idle iowait irq softirq steal guest guest_nice)
+    ~w(User Nice System Idle Iowait Irq Softirq Steal Guest Guest_Nice)
   end
 end
