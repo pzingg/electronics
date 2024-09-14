@@ -87,7 +87,7 @@ class Tls2591Sensor(Sensor):
       lux = self.tsl.lux
       return {'visible': visible, 'infrared': infrared, 'lux': lux}
     except RuntimeError as e:
-      print(f'{dt} Tls2591 error {e.message}')
+      print(f'{dt} Tls2591: {e}')
       return None
 
 cpu_columns = [
