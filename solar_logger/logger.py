@@ -22,12 +22,16 @@ class Sensor:
     pass
 
   def collect(self, dt, tag):
-    return {'table': self.name, 'at': dt, 'tag': tag, 'data': self.sensor_data()}
+    data = self.sensor_data(dt)
+    if data:
+      return {'table': self.name, 'at': dt, 'tag': tag, 'data': data}
+    else:
+      return None
 
   def print(self, data):
     print(self.format.format_map(data))
 
-  def sensor_data(self):
+  def sensor_data(self, dt):
     return {}
 
 
@@ -71,12 +75,20 @@ class Tls2591Sensor(Sensor):
     except AttributeError as e:
       print(f'Tls2591 sensor not enabled: {e}')
 
-  def sensor_data(self):
-    visible = self.tsl.visible
-    infrared = self.tsl.infrared
-    lux = self.tsl.lux
-    return {'visible': visible, 'infrared': infrared, 'lux': lux}
-
+  def sensor_data(self, dt):
+    # In bright light Tls2591 can throw a RuntimeError when
+    # fetching lux value:
+    # Overflow reading light channels!, Try to reduce the gain of
+    #   the sensor using adafruit_tsl2591.GAIN_LOW
+    # Unfortunately we are already running at GAIN_LOW
+    try:
+      visible = self.tsl.visible
+      infrared = self.tsl.infrared
+      lux = self.tsl.lux
+      return {'visible': visible, 'infrared': infrared, 'lux': lux}
+    except RuntimeError, e:
+      print(f'{dt} Tls2591 error {e.message}')
+      return None
 
 cpu_columns = [
   ('user', 'REAL'),
@@ -100,7 +112,7 @@ class PsCpuSensor(Sensor):
   def setup(self):
     self.enabled = True
 
-  def sensor_data(self):
+  def sensor_data(self, dt):
     cpu_data = ps.cpu_times()._asdict()
     data = {}
     for key in [col[0] for col in self.schema if col[0] in cpu_data]:
@@ -130,7 +142,7 @@ class PsVmemorySensor(Sensor):
   def setup(self):
     self.enabled = True
 
-  def sensor_data(self):
+  def sensor_data(self, dt):
     vm_data = ps.virtual_memory()._asdict()
     data = {}
     for key in [col[0] for col in self.schema if col[0] in vm_data]:
@@ -204,12 +216,16 @@ class Logger:
     self.log_data(all_data)
 
   def collect_data(self):
-    '''Collect data and assign to class variable'''
+    '''Collect data from all enabled sensors'''
     now = datetime.utcnow()
+
     all_data = []
     for sensor in self.sensors.values():
       if sensor.enabled:
-        all_data.append(sensor.collect(now, self.tag))
+        sensor_data = sensor.collect(now, self.tag)
+        if sensor_data:
+          all_data.append(sensor_data)
+
     return (now, all_data)
 
   def print_data(self, dt, all_data):
