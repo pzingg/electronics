@@ -9,6 +9,7 @@ import urllib3
 
 from datetime import datetime
 from time import sleep
+from urllib.parse import parse_qs
 
 import config
 
@@ -28,7 +29,7 @@ class Sensor:
     pass
 
   def collect(self, dt, tag):
-    data = self.sensor_data(dt)
+    data = self.sensor_data(tag)
     if data:
       return {'table': self.name, 'at': dt, 'tag': tag, 'data': data}
     else:
@@ -37,9 +38,8 @@ class Sensor:
   def print_log(self, data):
     logger.info(self.format.format_map(data))
 
-  def sensor_data(self, dt):
+  def sensor_data(self, tag):
     return {}
-
 
 _TSL2591_LUX_DF = 408.0
 _TSL2591_LUX_COEFB = 1.64
@@ -67,6 +67,14 @@ tls2591_columns = [
 ]
 
 tls2591_format = 'Luminosity visible: {visible:,d}, infrared: {infrared:,d}, lux: {lux:,.0f}'
+
+def option_in_tag(tag, key):
+  parts = tag.split(',')
+  for p in parts:
+    d = parse_qs(p.strip())
+    if key in d:
+      return d[key][0]
+  return None
 
 class Tsl2591Sensor(Sensor):
   def __init__(self):
@@ -103,7 +111,7 @@ class Tsl2591Sensor(Sensor):
       # self.enabled = True
       logger.error(f'Tsl2591 init error: {e}')
 
-  def sensor_data(self, dt):
+  def sensor_data(self, tag):
     # In bright light Tsl2591 can throw a RuntimeError when
     # fetching lux value:
     # Overflow reading light channels!, Try to reduce the gain of
@@ -140,6 +148,16 @@ class Tsl2591Sensor(Sensor):
         lux = max(lux1, lux2)
         logger.warning(f'Tsl2591 calculated lux {lux}')
 
+      nd = option_in_tag(tag, 'nd')
+      if nd:
+        try:
+          nd = float(nd)
+          visible = visible * nd
+          infrared = infrared * nd
+          lux = lux * nd
+        except:
+          pass
+
       return {'visible': visible, 'infrared': infrared, 'lux': lux}
     else:
       return None
@@ -166,7 +184,7 @@ class PsCpuSensor(Sensor):
   def setup(self):
     self.enabled = True
 
-  def sensor_data(self, dt):
+  def sensor_data(self, tag):
     cpu_data = ps.cpu_times()._asdict()
     data = {}
     for key in [col[0] for col in self.schema if col[0] in cpu_data]:
@@ -196,7 +214,7 @@ class PsVmemorySensor(Sensor):
   def setup(self):
     self.enabled = True
 
-  def sensor_data(self, dt):
+  def sensor_data(self, tag):
     vm_data = ps.virtual_memory()._asdict()
     data = {}
     for key in [col[0] for col in self.schema if col[0] in vm_data]:
