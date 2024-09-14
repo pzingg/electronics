@@ -395,8 +395,8 @@ defmodule Collector.Solar do
     2_432_916.5 + delta * 365.0 + leap_days + day_num + partial_day
   end
 
-  # Extra-terrestrial raditaion, could be 1353.0, but we will use lower value.
-  @solar_etr 1000.0
+  # Extra-terrestrial raditaion, could be 1353.0, or a lower value.
+  @solar_etr 1353.0
 
   @doc """
   Approximates the solar energy in W/m2 perpendicular to the ground

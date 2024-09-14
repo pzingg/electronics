@@ -31,7 +31,7 @@ class Sensor:
   def collect(self, dt, tag):
     data = self.sensor_data(tag)
     if data:
-      return {'table': self.name, 'at': dt, 'tag': tag, 'data': data}
+      return {'table': self.name, 'at': dt, 'data': data}
     else:
       return None
 
@@ -45,20 +45,6 @@ _TSL2591_LUX_DF = 408.0
 _TSL2591_LUX_COEFB = 1.64
 _TSL2591_LUX_COEFC = 0.59
 _TSL2591_LUX_COEFD = 0.86
-
-# Class for testing only
-class MockTsl2591:
-  @property
-  def visible(self):
-    return 554840886
-
-  @property
-  def infrared(self):
-    return 8478
-
-  @property
-  def lux(self):
-    raise RuntimeError('overflow - use smaller gain')
 
 tls2591_columns = [
   ('visible', 'INTEGER'),
@@ -146,21 +132,45 @@ class Tsl2591Sensor(Sensor):
         lux1 = (channel_0 - (_TSL2591_LUX_COEFB * channel_1)) / cpl
         lux2 = ((_TSL2591_LUX_COEFC * channel_0) - (_TSL2591_LUX_COEFD * channel_1)) / cpl
         lux = max(lux1, lux2)
+        if tag:
+          tag = f'{tag},overflow'
+        else:
+          tag = 'overflow'
         logger.warning(f'Tsl2591 calculated lux {lux}')
 
       nd = option_in_tag(tag, 'nd')
       if nd:
         try:
           nd = float(nd)
-          visible = visible * nd
-          infrared = infrared * nd
           lux = lux * nd
         except:
           pass
 
-      return {'visible': visible, 'infrared': infrared, 'lux': lux}
+      return {'tag': tag, 'visible': visible, 'infrared': infrared, 'lux': lux}
     else:
       return None
+
+# Class for testing only
+class MockTsl2591:
+  @property
+  def visible(self):
+    return 554840886
+
+  @property
+  def infrared(self):
+    return 8478
+
+  @property
+  def lux(self):
+    raise RuntimeError('overflow - use smaller gain')
+
+class MockTsl2591Sensor(Tsl2591Sensor):
+  def __init__(self):
+    super().__init__()
+
+  def setup(self):
+    self.tsl = MockTsl2591()
+    self.enabled = True
 
 cpu_columns = [
   ('user', 'REAL'),
@@ -186,7 +196,7 @@ class PsCpuSensor(Sensor):
 
   def sensor_data(self, tag):
     cpu_data = ps.cpu_times()._asdict()
-    data = {}
+    data = {'tag': tag}
     for key in [col[0] for col in self.schema if col[0] in cpu_data]:
       data[key] = cpu_data[key]
     return data
@@ -216,7 +226,7 @@ class PsVmemorySensor(Sensor):
 
   def sensor_data(self, tag):
     vm_data = ps.virtual_memory()._asdict()
-    data = {}
+    data = {'tag': tag}
     for key in [col[0] for col in self.schema if col[0] in vm_data]:
       data[key] = vm_data[key]
     return data
@@ -261,13 +271,14 @@ class Logger:
 
     if enabled:
       any_enabled = True
-      enabled = f'''Sensors {', '.join(enabled)} enabled'''
+      enabled = f'''Sensors: {', '.join(enabled)}'''
     else:
-      enabled = 'No sensors enabled'
+      enabled = 'Sensors: none'
 
-    logger.info(f'Database at {self.dbfile}')
+    logger.info(f'Tag: {self.tag}')
+    logger.info(f'Database: {self.dbfile}')
     logger.info(enabled)
-    logger.info(f'Updates to {self.update_url}')
+    logger.info(f'Updates: {self.update_url}')
 
   def setup_db(self):
     conn = sqlite3.connect(self.dbfile)
@@ -322,10 +333,9 @@ class Logger:
     for sensor_data in all_data:
       table  = sensor_data['table']
       dt     = sensor_data['at']
-      tag    = sensor_data['tag']
       data   = sensor_data['data']
-      cols   = ['at', 'tag'] + list(data.keys())
-      values = [dt, tag] + list(data.values())
+      cols   = ['at'] + list(data.keys())
+      values = [dt] + list(data.values())
       params = ','.join('?' * len(cols))
       cursor.execute(f'''INSERT INTO {table} ({', '.join(cols)}) VALUES({params})''', values)
       conn.commit()
