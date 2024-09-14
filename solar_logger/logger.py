@@ -366,7 +366,7 @@ class Logger:
     all_data = {}
 
     for table in tables:
-      res = cursor.execute(f'SELECT * FROM {table} WHERE sent IS NULL')
+      res = cursor.execute(f'SELECT * FROM {table} WHERE sent IS NULL ORDER BY at DESC LIMIT 100')
 
       table_data = []
       for row in res:
