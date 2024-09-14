@@ -14,6 +14,9 @@ import config
 
 logger = logging.getLogger('logger')
 
+def interp(x, x1, x2, y1, y2):
+  return (x - x1) * (y2 - y1) / (x2 - x1) + y1
+
 class Sensor:
   def __init__(self, name, schema, format):
     self.name = name
@@ -38,15 +41,34 @@ class Sensor:
     return {}
 
 
+_TSL2591_LUX_DF = 408.0
+_TSL2591_LUX_COEFB = 1.64
+_TSL2591_LUX_COEFC = 0.59
+_TSL2591_LUX_COEFD = 0.86
+
+# Class for testing only
+class MockTsl2591:
+  @property
+  def visible(self):
+    return 554840886
+
+  @property
+  def infrared(self):
+    return 8478
+
+  @property
+  def lux(self):
+    raise RuntimeError('overflow - use smaller gain')
+
 tls2591_columns = [
   ('visible', 'INTEGER'),
   ('infrared', 'INTEGER'),
   ('lux', 'REAL')
 ]
 
-tls2591_format = "Luminosity visible: {visible:,d}, infrared: {infrared:,d}, lux: {lux:,.0f}"
+tls2591_format = 'Luminosity visible: {visible:,d}, infrared: {infrared:,d}, lux: {lux:,.0f}'
 
-class Tls2591Sensor(Sensor):
+class Tsl2591Sensor(Sensor):
   def __init__(self):
     super().__init__('luminosity', tls2591_columns, tls2591_format)
 
@@ -76,21 +98,50 @@ class Tls2591Sensor(Sensor):
       self.enabled = True
 
     except AttributeError as e:
-      logger.error(f'Tls2591 init error: {e}')
+      # Uncomment to test overflow:
+      # self.tsl = MockTsl2591()
+      # self.enabled = True
+      logger.error(f'Tsl2591 init error: {e}')
 
   def sensor_data(self, dt):
-    # In bright light Tls2591 can throw a RuntimeError when
+    # In bright light Tsl2591 can throw a RuntimeError when
     # fetching lux value:
     # Overflow reading light channels!, Try to reduce the gain of
     #   the sensor using adafruit_tsl2591.GAIN_LOW
     # Unfortunately we are already running at GAIN_LOW
     try:
       visible = self.tsl.visible
-      infrared = self.tsl.infrared
-      lux = self.tsl.lux
-      return {'visible': visible, 'infrared': infrared, 'lux': lux}
     except RuntimeError as e:
-      logger.error(f'Tls2591 read error: {e}')
+      logger.error(f'Tsl2591 visible read error: {e}')
+      visible = None
+
+    try:
+      infrared = self.tsl.infrared
+    except RuntimeError as e:
+      logger.error(f'Tsl2591 infrared read error: {e}')
+      infrared = None
+
+    try:
+      lux = self.tsl.lux
+    except RuntimeError as e:
+      logger.error(f'Tsl2591 lux read error: {e}')
+      lux = None
+
+    if visible and infrared:
+      if lux is None:
+        # From the adafruit_tsl2591 source code
+        atime = 100.0
+        again = 1.0
+        cpl = (atime * again) / _TSL2591_LUX_DF
+        channel_0 = (visible + infrared) & 0xFFFF
+        channel_1 = infrared
+        lux1 = (channel_0 - (_TSL2591_LUX_COEFB * channel_1)) / cpl
+        lux2 = ((_TSL2591_LUX_COEFC * channel_0) - (_TSL2591_LUX_COEFD * channel_1)) / cpl
+        lux = max(lux1, lux2)
+        logger.warning(f'Tsl2591 calculated lux {lux}')
+
+      return {'visible': visible, 'infrared': infrared, 'lux': lux}
+    else:
       return None
 
 cpu_columns = [
@@ -106,7 +157,7 @@ cpu_columns = [
   ('guest_nice', 'REAL')
 ]
 
-cpu_format = "Cpu time user: {user:,.0f}, system: {system:,.0f}, idle: {idle:,.0f}"
+cpu_format = 'Cpu time user: {user:,.0f}, system: {system:,.0f}, idle: {idle:,.0f}'
 
 class PsCpuSensor(Sensor):
   def __init__(self):
@@ -136,7 +187,7 @@ vmemory_columns = [
   ('slab', 'INTEGER')
 ]
 
-vmemory_format = "Virtual memory total: {total:,d}, available: {available:,d}"
+vmemory_format = 'Virtual memory total: {total:,d}, available: {available:,d}'
 
 class PsVmemorySensor(Sensor):
   def __init__(self):

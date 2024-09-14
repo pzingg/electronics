@@ -1,5 +1,5 @@
 # Configuration file
-sensors = ['Tls2591Sensor']
+sensors = ['Tsl2591Sensor']
 tag = 'sunny'
 update_url = 'http://10.0.0.95:4000/'
 update_method = 'PUT'

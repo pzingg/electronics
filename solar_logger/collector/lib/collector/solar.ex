@@ -482,6 +482,8 @@ defmodule Collector.Solar do
   ch0_counts =     36849 # full & 0xFFFF
   ch1_counts =     12662 # (full >> 16) & 0xFFFF, or infrared
 
+  ((visible + infrared) >> 16) as ch1
+
   w_m2_ch0 = 0.01 * (ch0 / 6024.0) * (9876.0 / gain) * (100.0 / int_time_ms)
            = 1.639442231075697 * ch0 / (gain * int_time_ms)
            = 1.639442231075697 * 36849.0 / 100.0
