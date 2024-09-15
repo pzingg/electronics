@@ -8,8 +8,8 @@ WorkingDirectory=/home/pzingg/projects/electronics/solar_logger
 Restart=on-failure
 RestartSec=5s
 ExecStart=/home/pzingg/.virtualenvs/solar/bin/python3 -m logger
-StandardOutput=syslog
-StandardError=syslog
+StandardOutput=journal
+StandardError=journal
 SyslogIdentifier=solar_logger
 
 [Install]
